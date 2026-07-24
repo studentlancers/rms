@@ -1,53 +1,69 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import { StatCard } from "@/components/ui/stat-card";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal } from "@/components/ui/modal";
-import { Plus, ChevronRight, Calendar, UserCheck } from "lucide-react";
+import { Plus, ChevronRight, UserCheck } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function StaffPage() {
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
+  // Team members with read-only attendance status
   const teamMembers = [
     {
       initials: "AL",
       name: "Avery Lin",
       role: "General Manager",
       department: "Operations",
-      status: "On shift",
+      shiftStatus: "On shift",
+      attendance: "Present" as const,
     },
     {
       initials: "MP",
       name: "Maya Patel",
       role: "Floor Lead",
       department: "Front of house",
-      status: "On shift",
+      shiftStatus: "On shift",
+      attendance: "Present" as const,
     },
     {
       initials: "JB",
       name: "Jon Bell",
       role: "Sous Chef",
       department: "Kitchen",
-      status: "On break",
+      shiftStatus: "On break",
+      attendance: "Present" as const,
     },
     {
       initials: "SM",
       name: "Sophie Martin",
       role: "Server",
       department: "Front of house",
-      status: "Scheduled",
+      shiftStatus: "Scheduled",
+      attendance: "Leave" as const,
     },
     {
       initials: "HT",
       name: "Hiro Tanaka",
       role: "Line Cook",
       department: "Kitchen",
-      status: "Scheduled",
+      shiftStatus: "Off Duty",
+      attendance: "Absent" as const,
     },
   ];
+
+  const getAttendanceBadgeStyles = (status: "Present" | "Absent" | "Leave") => {
+    switch (status) {
+      case "Present":
+        return "bg-emerald-50 text-emerald-600 border-emerald-200/60";
+      case "Absent":
+        return "bg-rose-50 text-rose-600 border-rose-200/60";
+      case "Leave":
+        return "bg-amber-50 text-amber-600 border-amber-200/60";
+    }
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -65,7 +81,7 @@ export default function StaffPage() {
 
         <button
           onClick={() => setIsAddStaffOpen(true)}
-          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto"
+          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Add team member</span>
@@ -99,20 +115,20 @@ export default function StaffPage() {
               THE LANGHAM TEAM
             </div>
             <h3 className="text-xl font-bold text-slate-900 mt-0.5">
-              People directory
+              People directory & attendance
             </h3>
           </div>
 
           <button
             onClick={() => setIsScheduleOpen(true)}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors cursor-pointer"
           >
             <span>View schedule</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Data Table */}
+        {/* Data Table with Read-only Attendance Status */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -120,7 +136,8 @@ export default function StaffPage() {
                 <th className="py-3 px-4">TEAM MEMBER</th>
                 <th className="py-3 px-4">ROLE</th>
                 <th className="py-3 px-4">DEPARTMENT</th>
-                <th className="py-3 px-4">STATUS</th>
+                <th className="py-3 px-4">SHIFT STATUS</th>
+                <th className="py-3 px-4">ATTENDANCE</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
@@ -148,8 +165,20 @@ export default function StaffPage() {
                     {member.department}
                   </td>
 
+                  <td className="py-4 px-4 text-slate-500 font-mono">
+                    {member.shiftStatus}
+                  </td>
+
+                  {/* Read-only Attendance Badge */}
                   <td className="py-4 px-4">
-                    <StatusBadge status={member.status} />
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border select-none",
+                        getAttendanceBadgeStyles(member.attendance)
+                      )}
+                    >
+                      {member.attendance}
+                    </span>
                   </td>
                 </tr>
               ))}

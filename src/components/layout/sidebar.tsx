@@ -15,13 +15,25 @@ import {
   Globe,
   LogOut,
   X,
+  UtensilsCrossed,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Exact Sidebar Menu Order requested by user:
+// 1. Overview
+// 2. Operations
+// 3. Inventory
+// 4. Expenses
+// 5. Menu & Billing
+// 6. Staff
+// 7. Reports
 const navigationItems = [
   { name: "Overview", href: "/", icon: LayoutDashboard },
   { name: "Operations", href: "/operations", icon: ShoppingBag },
   { name: "Inventory", href: "/inventory", icon: Package },
+  { name: "Expenses", href: "/expenses", icon: Receipt },
+  { name: "Menu & Billing", href: "/menu", icon: UtensilsCrossed },
   { name: "Staff", href: "/staff", icon: Users },
   { name: "Reports", href: "/reports", icon: FileText },
 ];
