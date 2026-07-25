@@ -102,7 +102,7 @@ export default function Header({
         {/* Mobile Sidebar Menu Toggle Button */}
         <button
           onClick={onMobileMenuToggle}
-          className="md:hidden p-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+          className="md:hidden p-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
           aria-label="Toggle navigation menu"
         >
           <Menu className="w-4 h-4" />
@@ -119,7 +119,15 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-2 md:gap-3">
-        {/* Notification Bell & Dropdown Container */}
+        {/* Floor Plan Button */}
+        <button
+          onClick={onFloorPlanClick || (() => alert("Opening floor plan..."))}
+          className="bg-black hover:bg-slate-900 text-white text-xs font-semibold px-3.5 md:px-4 py-2 rounded-full transition-all shadow-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+        >
+          View floor plan
+        </button>
+
+        {/* Notification Bell Icon & Dropdown Popover */}
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
@@ -138,7 +146,7 @@ export default function Header({
             )}
           </button>
 
-          {/* Notification Dropdown Popover */}
+          {/* Notification Dropdown Popover opening directly below bell */}
           {isNotificationsOpen && (
             <div className="absolute right-0 top-full mt-2 w-80 md:w-96 bg-white border border-slate-200/90 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
               {/* Dropdown Header */}
@@ -166,7 +174,7 @@ export default function Header({
                   )}
                   <button
                     onClick={() => setIsNotificationsOpen(false)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -232,13 +240,6 @@ export default function Header({
             </div>
           )}
         </div>
-
-        <button
-          onClick={onFloorPlanClick || (() => alert("Opening floor plan..."))}
-          className="bg-black hover:bg-slate-900 text-white text-xs font-semibold px-3.5 md:px-4 py-2 rounded-full transition-all shadow-sm flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-        >
-          View floor plan
-        </button>
       </div>
     </header>
   );

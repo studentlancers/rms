@@ -2,16 +2,16 @@
 
 import React, { useState } from "react";
 import { StatCard } from "@/components/ui/stat-card";
-import { Download, Calendar, BarChart3, TrendingUp, PieChart } from "lucide-react";
+import { Download, TrendingUp, PieChart } from "lucide-react";
 
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState("This Month");
 
   const reportsData = [
-    { period: "Feb 01 - Feb 07", covers: 1120, revenue: "$42,860", avgCheck: "$38.26", foodCost: "27.8%" },
-    { period: "Jan 25 - Jan 31", covers: 1080, revenue: "$40,120", avgCheck: "$37.14", foodCost: "28.1%" },
-    { period: "Jan 18 - Jan 24", covers: 1150, revenue: "$44,500", avgCheck: "$38.69", foodCost: "28.5%" },
-    { period: "Jan 11 - Jan 17", covers: 1470, revenue: "$56,810", avgCheck: "$38.64", foodCost: "27.2%" },
+    { period: "Feb 01 - Feb 07", covers: 1120, revenue: "₹42,860", avgCheck: "₹38.26", foodCost: "27.8%" },
+    { period: "Jan 25 - Jan 31", covers: 1080, revenue: "₹40,120", avgCheck: "₹37.14", foodCost: "28.1%" },
+    { period: "Jan 18 - Jan 24", covers: 1150, revenue: "₹44,500", avgCheck: "₹38.69", foodCost: "28.5%" },
+    { period: "Jan 11 - Jan 17", covers: 1470, revenue: "₹56,810", avgCheck: "₹38.64", foodCost: "27.2%" },
   ];
 
   return (
@@ -54,7 +54,7 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="MONTHLY REVENUE"
-          value="$184,290"
+          value="₹184,290"
           subtext="↗ 14.2% vs last month"
           trend={{ value: "↗ +14.2%", isPositive: true }}
         />
@@ -66,7 +66,7 @@ export default function ReportsPage() {
         />
         <StatCard
           label="REVPAR"
-          value="$38.20"
+          value="₹38.20"
           subtext="↗ 5.1% efficiency"
           trend={{ value: "↗ +5.1%", isPositive: true }}
         />
@@ -87,7 +87,7 @@ export default function ReportsPage() {
             <div>
               <div className="flex justify-between text-xs font-semibold text-slate-800 mb-1.5">
                 <span>Dinner Service (5:00 PM – 10:30 PM)</span>
-                <span className="font-mono text-blue-600">$118,340 (64%)</span>
+                <span className="font-mono text-blue-600">₹118,340 (64%)</span>
               </div>
               <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-600 rounded-full w-[64%]" />
@@ -97,7 +97,7 @@ export default function ReportsPage() {
             <div>
               <div className="flex justify-between text-xs font-semibold text-slate-800 mb-1.5">
                 <span>Lunch Service (11:30 AM – 3:00 PM)</span>
-                <span className="font-mono text-emerald-600">$65,950 (36%)</span>
+                <span className="font-mono text-emerald-600">₹65,950 (36%)</span>
               </div>
               <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div className="h-full bg-emerald-500 rounded-full w-[36%]" />

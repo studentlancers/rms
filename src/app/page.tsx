@@ -57,7 +57,7 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="SALES TODAY"
-          value="$8,426.80"
+          value="₹8,426.80"
           subtext="vs. last Thursday"
           trend={{ value: "↗ +12.4%", isPositive: true }}
         />
@@ -69,7 +69,7 @@ export default function OverviewPage() {
         />
         <StatCard
           label="AVERAGE CHECK"
-          value="$45.31"
+          value="₹45.31"
           subtext="vs. last Thursday"
           trend={{ value: "↘ -2.1%", isPositive: false }}
         />
@@ -86,7 +86,7 @@ export default function OverviewPage() {
               </div>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-bold tracking-tight text-slate-900">
-                  $42,860
+                  ₹42,860
                 </span>
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
                   ↗ 14.8%

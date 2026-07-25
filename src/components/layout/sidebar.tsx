@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
@@ -11,7 +12,6 @@ import {
   FileText,
   Settings,
   HelpCircle,
-  ChevronDown,
   Globe,
   LogOut,
   X,
@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Exact Sidebar Menu Order requested by user:
+// Exact Sidebar Menu Order:
 // 1. Overview
 // 2. Operations
 // 3. Inventory
@@ -175,7 +175,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
             </Link>
           </div>
 
-          {/* User Profile & Logout Action Card */}
+          {/* Single User Profile & Logout Action Card */}
           <div className="bg-slate-900/80 border border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/30 shrink-0">

@@ -3,54 +3,130 @@
 import React, { useState } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
-import { Plus, ChevronRight, UserCheck } from "lucide-react";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Plus, ChevronRight, Users, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export interface StaffMember {
+  id: string;
+  initials: string;
+  name: string;
+  role: string;
+  department: string;
+  attendance: "Present" | "Absent" | "Leave";
+}
+
+export interface SalaryRecord {
+  id: string;
+  name: string;
+  role: string;
+  monthlySalary: number;
+  advancePaid: number;
+  remainingSalary: number;
+  lastPaidDate: string;
+  paymentStatus: "Paid" | "Pending";
+}
+
 export default function StaffPage() {
+  const [activeTab, setActiveTab] = useState<"attendance" | "salary">("attendance");
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
-  // Team members with read-only attendance status
-  const teamMembers = [
+  // Team members directory focused on details and attendance
+  const teamMembers: StaffMember[] = [
     {
+      id: "ST-1",
       initials: "AL",
       name: "Avery Lin",
       role: "General Manager",
       department: "Operations",
-      shiftStatus: "On shift",
-      attendance: "Present" as const,
+      attendance: "Present",
     },
     {
+      id: "ST-2",
       initials: "MP",
       name: "Maya Patel",
       role: "Floor Lead",
       department: "Front of house",
-      shiftStatus: "On shift",
-      attendance: "Present" as const,
+      attendance: "Present",
     },
     {
+      id: "ST-3",
       initials: "JB",
       name: "Jon Bell",
       role: "Sous Chef",
       department: "Kitchen",
-      shiftStatus: "On break",
-      attendance: "Present" as const,
+      attendance: "Present",
     },
     {
+      id: "ST-4",
       initials: "SM",
       name: "Sophie Martin",
       role: "Server",
       department: "Front of house",
-      shiftStatus: "Scheduled",
-      attendance: "Leave" as const,
+      attendance: "Leave",
     },
     {
+      id: "ST-5",
       initials: "HT",
       name: "Hiro Tanaka",
       role: "Line Cook",
       department: "Kitchen",
-      shiftStatus: "Off Duty",
-      attendance: "Absent" as const,
+      attendance: "Absent",
+    },
+  ];
+
+  // Read-only Salary Management data (INR ₹)
+  const salaryRecords: SalaryRecord[] = [
+    {
+      id: "SAL-1",
+      name: "Avery Lin",
+      role: "General Manager",
+      monthlySalary: 85000,
+      advancePaid: 10000,
+      remainingSalary: 75000,
+      lastPaidDate: "2026-07-01",
+      paymentStatus: "Paid",
+    },
+    {
+      id: "SAL-2",
+      name: "Maya Patel",
+      role: "Floor Lead",
+      monthlySalary: 55000,
+      advancePaid: 5000,
+      remainingSalary: 50000,
+      lastPaidDate: "2026-07-01",
+      paymentStatus: "Paid",
+    },
+    {
+      id: "SAL-3",
+      name: "Jon Bell",
+      role: "Sous Chef",
+      monthlySalary: 62000,
+      advancePaid: 0,
+      remainingSalary: 62000,
+      lastPaidDate: "2026-07-01",
+      paymentStatus: "Paid",
+    },
+    {
+      id: "SAL-4",
+      name: "Sophie Martin",
+      role: "Server",
+      monthlySalary: 35000,
+      advancePaid: 4000,
+      remainingSalary: 31000,
+      lastPaidDate: "2026-06-30",
+      paymentStatus: "Pending",
+    },
+    {
+      id: "SAL-5",
+      name: "Hiro Tanaka",
+      role: "Line Cook",
+      monthlySalary: 40000,
+      advancePaid: 8000,
+      remainingSalary: 32000,
+      lastPaidDate: "2026-07-01",
+      paymentStatus: "Paid",
     },
   ];
 
@@ -70,7 +146,7 @@ export default function StaffPage() {
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="design-section-label mb-3">PEOPLE & SHIFTS</div>
+          <div className="design-section-label mb-3">PEOPLE & PAYROLL</div>
           <h1 className="font-display text-3xl md:text-4xl font-semibold tracking-tight text-slate-900">
             Staff
           </h1>
@@ -101,91 +177,188 @@ export default function StaffPage() {
           subtext="↗ 58% of team"
         />
         <StatCard
-          label="LABOUR COST"
-          value="22.8%"
-          subtext="↗ On target"
+          label="TOTAL PAYROLL"
+          value="₹2,77,000"
+          subtext="↗ Monthly budget"
         />
       </div>
 
-      {/* People Directory Table Card */}
-      <div className="design-surface p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
-              THE LANGHAM TEAM
+      {/* Tab Selectors: People & Attendance | Salary */}
+      <div className="flex items-center gap-3 border-b border-slate-200/80 pb-3 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab("attendance")}
+          className={cn(
+            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+            activeTab === "attendance"
+              ? "bg-blue-50 text-blue-600 border border-blue-200/60 shadow-2xs"
+              : "text-slate-500 hover:bg-slate-100"
+          )}
+        >
+          <Users className="w-4 h-4" />
+          <span>People & Attendance</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("salary")}
+          className={cn(
+            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+            activeTab === "salary"
+              ? "bg-blue-50 text-blue-600 border border-blue-200/60 shadow-2xs"
+              : "text-slate-500 hover:bg-slate-100"
+          )}
+        >
+          <CreditCard className="w-4 h-4" />
+          <span>Salary</span>
+        </button>
+      </div>
+
+      {/* Tab 1: People & Attendance Directory */}
+      {activeTab === "attendance" && (
+        <div className="design-surface p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
+                THE LANGHAM TEAM
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mt-0.5">
+                People directory & attendance
+              </h3>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mt-0.5">
-              People directory & attendance
-            </h3>
+
+            <button
+              onClick={() => setIsScheduleOpen(true)}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <span>View schedule</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          <button
-            onClick={() => setIsScheduleOpen(true)}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors cursor-pointer"
-          >
-            <span>View schedule</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Data Table with Read-only Attendance Status */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
-                <th className="py-3 px-4">TEAM MEMBER</th>
-                <th className="py-3 px-4">ROLE</th>
-                <th className="py-3 px-4">DEPARTMENT</th>
-                <th className="py-3 px-4">SHIFT STATUS</th>
-                <th className="py-3 px-4">ATTENDANCE</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {teamMembers.map((member, idx) => (
-                <tr
-                  key={idx}
-                  className="hover:bg-slate-50/80 transition-colors group"
-                >
-                  <td className="py-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center border border-blue-200/60">
-                        {member.initials}
-                      </div>
-                      <span className="font-semibold text-slate-900">
-                        {member.name}
-                      </span>
-                    </div>
-                  </td>
-
-                  <td className="py-4 px-4 text-slate-600 font-medium">
-                    {member.role}
-                  </td>
-
-                  <td className="py-4 px-4 text-slate-500">
-                    {member.department}
-                  </td>
-
-                  <td className="py-4 px-4 text-slate-500 font-mono">
-                    {member.shiftStatus}
-                  </td>
-
-                  {/* Read-only Attendance Badge */}
-                  <td className="py-4 px-4">
-                    <span
-                      className={cn(
-                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border select-none",
-                        getAttendanceBadgeStyles(member.attendance)
-                      )}
-                    >
-                      {member.attendance}
-                    </span>
-                  </td>
+          {/* Data Table with Read-only Attendance Status */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
+                  <th className="py-3 px-4">TEAM MEMBER</th>
+                  <th className="py-3 px-4">ROLE</th>
+                  <th className="py-3 px-4">DEPARTMENT</th>
+                  <th className="py-3 px-4">ATTENDANCE</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {teamMembers.map((member) => (
+                  <tr
+                    key={member.id}
+                    className="hover:bg-slate-50/80 transition-colors group"
+                  >
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center border border-blue-200/60">
+                          {member.initials}
+                        </div>
+                        <span className="font-semibold text-slate-900">
+                          {member.name}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-4 text-slate-600 font-medium">
+                      {member.role}
+                    </td>
+
+                    <td className="py-4 px-4 text-slate-500">
+                      {member.department}
+                    </td>
+
+                    {/* Read-only Attendance Badge */}
+                    <td className="py-4 px-4">
+                      <span
+                        className={cn(
+                          "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border select-none",
+                          getAttendanceBadgeStyles(member.attendance)
+                        )}
+                      >
+                        {member.attendance}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Tab 2: Read-Only Salary Management */}
+      {activeTab === "salary" && (
+        <div className="design-surface p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <div className="text-[10px] font-mono font-semibold tracking-wider text-blue-600 uppercase">
+                SALARY & DISBURSEMENTS
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mt-0.5">
+                Salary Management (Read-Only)
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500 font-mono bg-slate-100 px-3 py-1.5 rounded-lg self-start sm:self-auto">
+              Amounts in ₹ (INR)
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
+                  <th className="py-3 px-4">STAFF NAME</th>
+                  <th className="py-3 px-4">ROLE</th>
+                  <th className="py-3 px-4 text-right">MONTHLY SALARY (₹)</th>
+                  <th className="py-3 px-4 text-right">ADVANCE PAID (₹)</th>
+                  <th className="py-3 px-4 text-right">REMAINING SALARY (₹)</th>
+                  <th className="py-3 px-4">LAST PAID DATE</th>
+                  <th className="py-3 px-4">PAYMENT STATUS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {salaryRecords.map((record) => (
+                  <tr
+                    key={record.id}
+                    className="hover:bg-slate-50/80 transition-colors"
+                  >
+                    <td className="py-4 px-4 font-semibold text-slate-900">
+                      {record.name}
+                    </td>
+
+                    <td className="py-4 px-4 text-slate-600 font-medium">
+                      {record.role}
+                    </td>
+
+                    <td className="py-4 px-4 text-right font-mono font-semibold text-slate-900">
+                      ₹{record.monthlySalary.toLocaleString("en-IN")}
+                    </td>
+
+                    <td className="py-4 px-4 text-right font-mono text-amber-600">
+                      ₹{record.advancePaid.toLocaleString("en-IN")}
+                    </td>
+
+                    <td className="py-4 px-4 text-right font-mono font-bold text-blue-600">
+                      ₹{record.remainingSalary.toLocaleString("en-IN")}
+                    </td>
+
+                    <td className="py-4 px-4 font-mono text-slate-500">
+                      {record.lastPaidDate}
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <StatusBadge status={record.paymentStatus} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Add Team Member */}
       <Modal
@@ -243,7 +416,7 @@ export default function StaffPage() {
                 alert("Team member invited!");
                 setIsAddStaffOpen(false);
               }}
-              className="px-5 py-2 rounded-xl bg-[#0052ff] text-white text-xs font-semibold shadow-sm"
+              className="px-5 py-2 rounded-xl bg-[#0052ff] text-[#ffffff] text-xs font-semibold shadow-sm"
             >
               Send Invite
             </button>

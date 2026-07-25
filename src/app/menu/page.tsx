@@ -1,19 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Plus,
-  Search,
   Edit2,
   Trash2,
   Receipt,
   Utensils,
-  CheckCircle2,
-  DollarSign,
-  ShoppingCart,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,8 +34,118 @@ interface BillItem {
   date: string;
 }
 
+interface CatalogItem {
+  name: string;
+  halfPrice: number | null;
+  fullPrice: number;
+  available?: boolean;
+}
+
+interface CatalogSection {
+  category: string;
+  items: CatalogItem[];
+}
+
 export default function MenuPage() {
-  const [activeTab, setActiveTab] = useState<"menu" | "bills">("menu");
+  const [activeTab, setActiveTab] = useState<"menu" | "bills" | "catalog">("menu");
+
+  // Initial Catalog Data with realistic items & prices in INR
+  const initialCatalogSections: CatalogSection[] = [
+    {
+      category: "Veg Starters",
+      items: [
+        { name: "Paneer Tikka", halfPrice: 180, fullPrice: 320, available: true },
+        { name: "Hara Bhara Kebab", halfPrice: 150, fullPrice: 270, available: true },
+        { name: "Crispy Corn Chili Pepper", halfPrice: 160, fullPrice: 280, available: true },
+        { name: "Mushroom Multani", halfPrice: 190, fullPrice: 340, available: true },
+      ],
+    },
+    {
+      category: "Non-Veg Starters",
+      items: [
+        { name: "Chicken Tikka", halfPrice: 220, fullPrice: 390, available: true },
+        { name: "Tandoori Chicken", halfPrice: 240, fullPrice: 440, available: true },
+        { name: "Fish Amritsari", halfPrice: 280, fullPrice: 490, available: true },
+        { name: "Mutton Seekh Kebab", halfPrice: 310, fullPrice: 550, available: true },
+      ],
+    },
+    {
+      category: "Soups",
+      items: [
+        { name: "Tomato Basil Soup", halfPrice: 90, fullPrice: 150, available: true },
+        { name: "Sweet Corn Chicken Soup", halfPrice: 110, fullPrice: 180, available: true },
+        { name: "Hot & Sour Veg Soup", halfPrice: 100, fullPrice: 160, available: true },
+        { name: "Manchow Soup (Veg / Non-Veg)", halfPrice: 110, fullPrice: 190, available: true },
+      ],
+    },
+    {
+      category: "Main Course",
+      items: [
+        { name: "Dal Makhani", halfPrice: 170, fullPrice: 290, available: true },
+        { name: "Paneer Butter Masala", halfPrice: 200, fullPrice: 360, available: true },
+        { name: "Butter Chicken", halfPrice: 250, fullPrice: 450, available: true },
+        { name: "Mutton Rogan Josh", halfPrice: 310, fullPrice: 560, available: true },
+        { name: "Kadhai Paneer", halfPrice: 190, fullPrice: 340, available: true },
+      ],
+    },
+    {
+      category: "Biryani",
+      items: [
+        { name: "Veg Dum Biryani", halfPrice: 180, fullPrice: 310, available: true },
+        { name: "Hyderabadi Chicken Biryani", halfPrice: 230, fullPrice: 410, available: true },
+        { name: "Special Mutton Biryani", halfPrice: 290, fullPrice: 520, available: true },
+        { name: "Egg Biryani", halfPrice: 160, fullPrice: 280, available: true },
+      ],
+    },
+    {
+      category: "Chinese",
+      items: [
+        { name: "Veg Hakka Noodles", halfPrice: 140, fullPrice: 240, available: true },
+        { name: "Chili Chicken Dry / Gravy", halfPrice: 210, fullPrice: 370, available: true },
+        { name: "Veg Fried Rice", halfPrice: 130, fullPrice: 230, available: true },
+        { name: "Chicken Schezwan Fried Rice", halfPrice: 170, fullPrice: 300, available: true },
+      ],
+    },
+    {
+      category: "Snacks",
+      items: [
+        { name: "Veg Spring Rolls", halfPrice: 130, fullPrice: 220, available: true },
+        { name: "Chicken Nuggets (8 pcs)", halfPrice: 160, fullPrice: 280, available: true },
+        { name: "Peri Peri French Fries", halfPrice: 90, fullPrice: 150, available: true },
+        { name: "Cheese Garlic Bread", halfPrice: 120, fullPrice: 200, available: true },
+      ],
+    },
+    {
+      category: "Desserts",
+      items: [
+        { name: "Gulab Jamun (2 pcs)", halfPrice: null, fullPrice: 120, available: true },
+        { name: "Rasmalai (2 pcs)", halfPrice: null, fullPrice: 150, available: true },
+        { name: "Sizzling Brownie with Vanilla Ice Cream", halfPrice: null, fullPrice: 240, available: true },
+        { name: "Kesar Pista Kulfi", halfPrice: null, fullPrice: 110, available: true },
+      ],
+    },
+    {
+      category: "Beverages",
+      items: [
+        { name: "Masala Special Chai", halfPrice: null, fullPrice: 60, available: true },
+        { name: "Fresh Lime Soda (Sweet / Salt)", halfPrice: null, fullPrice: 110, available: true },
+        { name: "Cold Coffee with Ice Cream", halfPrice: null, fullPrice: 160, available: true },
+        { name: "Mango Lassi", halfPrice: null, fullPrice: 130, available: true },
+      ],
+    },
+  ];
+
+  const [catalogSections, setCatalogSections] = useState<CatalogSection[]>(initialCatalogSections);
+
+  // Edit Catalog Item Modal state
+  const [isEditCatalogOpen, setIsEditCatalogOpen] = useState(false);
+  const [catalogOriginalCategory, setCatalogOriginalCategory] = useState("");
+  const [catalogOriginalName, setCatalogOriginalName] = useState("");
+  const [catalogDishName, setCatalogDishName] = useState("");
+  const [catalogCategory, setCatalogCategory] = useState("Veg Starters");
+  const [catalogHalfPrice, setCatalogHalfPrice] = useState("");
+  const [catalogFullPrice, setCatalogFullPrice] = useState("");
+  const [catalogAvailable, setCatalogAvailable] = useState(true);
 
   // Menu items state
   const [menuItems, setMenuItems] = useState<MenuItem[]>([
@@ -88,7 +194,7 @@ export default function MenuPage() {
       billNumber: "#INV-1084",
       customerName: "Sophie Martin",
       assignedStaff: "Avery Lin",
-      totalAmount: "$86.50",
+      totalAmount: "₹86.50",
       paymentStatus: "Paid",
       paymentMode: "Card",
       date: "Today, 12:45 PM",
@@ -98,7 +204,7 @@ export default function MenuPage() {
       billNumber: "#INV-1085",
       customerName: "Thomas Wright",
       assignedStaff: "Maya Patel",
-      totalAmount: "$162.00",
+      totalAmount: "₹162.00",
       paymentStatus: "Paid",
       paymentMode: "UPI/Online",
       date: "Today, 01:15 PM",
@@ -108,7 +214,7 @@ export default function MenuPage() {
       billNumber: "#INV-1086",
       customerName: "Hiro Tanaka",
       assignedStaff: "Jon Bell",
-      totalAmount: "$240.00",
+      totalAmount: "₹240.00",
       paymentStatus: "Unpaid",
       paymentMode: "Cash",
       date: "Today, 01:30 PM",
@@ -148,11 +254,77 @@ export default function MenuPage() {
     setIsAddMenuOpen(true);
   };
 
+  // Open Edit Catalog Modal pre-filled
+  const openEditCatalog = (dish: CatalogItem, sectionCategory: string) => {
+    setCatalogOriginalCategory(sectionCategory);
+    setCatalogOriginalName(dish.name);
+    setCatalogDishName(dish.name);
+    setCatalogCategory(sectionCategory);
+    setCatalogHalfPrice(dish.halfPrice !== null ? dish.halfPrice.toString() : "");
+    setCatalogFullPrice(dish.fullPrice.toString());
+    setCatalogAvailable(dish.available ?? true);
+    setIsEditCatalogOpen(true);
+  };
+
+  const handleSaveCatalogDish = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!catalogDishName.trim()) return;
+
+    const updatedDish: CatalogItem = {
+      name: catalogDishName.trim(),
+      halfPrice: catalogHalfPrice.trim() !== "" ? parseFloat(catalogHalfPrice) : null,
+      fullPrice: parseFloat(catalogFullPrice) || 0,
+      available: catalogAvailable,
+    };
+
+    setCatalogSections((prevSections) => {
+      // Create deep copy
+      let newSections = prevSections.map((sec) => ({
+        ...sec,
+        items: [...sec.items],
+      }));
+
+      // Remove from original category
+      newSections = newSections.map((sec) => {
+        if (sec.category === catalogOriginalCategory) {
+          return {
+            ...sec,
+            items: sec.items.filter((i) => i.name !== catalogOriginalName),
+          };
+        }
+        return sec;
+      });
+
+      // Add/insert into selected category
+      let categoryExists = false;
+      newSections = newSections.map((sec) => {
+        if (sec.category === catalogCategory) {
+          categoryExists = true;
+          return {
+            ...sec,
+            items: [...sec.items, updatedDish],
+          };
+        }
+        return sec;
+      });
+
+      if (!categoryExists) {
+        newSections.push({
+          category: catalogCategory,
+          items: [updatedDish],
+        });
+      }
+
+      return newSections;
+    });
+
+    setIsEditCatalogOpen(false);
+  };
+
   const handleSaveMenuItem = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (editingMenuItem) {
-      // Edit existing
       setMenuItems((prev) =>
         prev.map((item) =>
           item.id === editingMenuItem.id
@@ -169,7 +341,6 @@ export default function MenuPage() {
         )
       );
     } else {
-      // Add new
       const newItem: MenuItem = {
         id: `M-${Date.now().toString().slice(-3)}`,
         name: menuName,
@@ -208,7 +379,7 @@ export default function MenuPage() {
       billNumber: `#INV-${Math.floor(1000 + Math.random() * 9000)}`,
       customerName: billCustomer,
       assignedStaff: billStaff,
-      totalAmount: `$${finalTotal}`,
+      totalAmount: `₹${finalTotal}`,
       paymentStatus: "Paid",
       paymentMode,
       date: "Just now",
@@ -235,35 +406,40 @@ export default function MenuPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              setEditingMenuItem(null);
-              setMenuName("");
-              setMenuDesc("");
-              setIsAddMenuOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-slate-900 hover:bg-black text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Menu Item</span>
-          </button>
+          {/* CRITICAL REQUIREMENT: Add Menu Item button ONLY visible on Menu Items tab */}
+          {activeTab === "menu" && (
+            <button
+              onClick={() => {
+                setEditingMenuItem(null);
+                setMenuName("");
+                setMenuDesc("");
+                setIsAddMenuOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-slate-900 hover:bg-black text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Menu Item</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setIsCreateBillOpen(true)}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
-          >
-            <Receipt className="w-4 h-4" />
-            <span>Create Bill</span>
-          </button>
+          {activeTab === "bills" && (
+            <button
+              onClick={() => setIsCreateBillOpen(true)}
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+            >
+              <Receipt className="w-4 h-4" />
+              <span>Create Bill</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Tab Selectors */}
-      <div className="flex items-center gap-3 border-b border-slate-200/80 pb-3">
+      <div className="flex items-center gap-3 border-b border-slate-200/80 pb-3 overflow-x-auto">
         <button
           onClick={() => setActiveTab("menu")}
           className={cn(
-            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2",
+            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
             activeTab === "menu"
               ? "bg-blue-50 text-blue-600 border border-blue-200/60 shadow-2xs"
               : "text-slate-500 hover:bg-slate-100"
@@ -276,7 +452,7 @@ export default function MenuPage() {
         <button
           onClick={() => setActiveTab("bills")}
           className={cn(
-            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2",
+            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
             activeTab === "bills"
               ? "bg-blue-50 text-blue-600 border border-blue-200/60 shadow-2xs"
               : "text-slate-500 hover:bg-slate-100"
@@ -284,6 +460,19 @@ export default function MenuPage() {
         >
           <Receipt className="w-4 h-4" />
           <span>Customer Bills ({bills.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("catalog")}
+          className={cn(
+            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
+            activeTab === "catalog"
+              ? "bg-blue-50 text-blue-600 border border-blue-200/60 shadow-2xs"
+              : "text-slate-500 hover:bg-slate-100"
+          )}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Catalog</span>
         </button>
       </div>
 
@@ -332,7 +521,7 @@ export default function MenuPage() {
               <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                 <div>
                   <div className="text-lg font-bold text-slate-900">
-                    ${item.price.toFixed(2)}
+                    ₹{item.price.toFixed(2)}
                   </div>
                   <div className="text-[10px] font-mono text-slate-400">
                     GST: {item.gstPercent}%
@@ -409,6 +598,193 @@ export default function MenuPage() {
         </div>
       )}
 
+      {/* Tab 3: Restaurant Menu Catalog with Edit capabilities per row */}
+      {activeTab === "catalog" && (
+        <div className="design-surface p-6 space-y-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div>
+              <div className="text-[10px] font-mono font-semibold tracking-wider text-blue-600 uppercase">
+                DINING MENU CATALOG
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mt-0.5">
+                Restaurant Catalog & Portion Rates
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500 font-medium bg-slate-100 px-3 py-1.5 rounded-lg self-start sm:self-auto">
+              Portion Prices in ₹ (INR)
+            </span>
+          </div>
+
+          <div className="space-y-8">
+            {catalogSections.map((section, sIdx) => (
+              <div key={sIdx} className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#0052ff]" />
+                  <h4 className="font-bold text-base text-slate-900 tracking-tight">
+                    {section.category}
+                  </h4>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    ({section.items.length} items)
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
+                        <th className="py-3 px-4">DISH NAME</th>
+                        <th className="py-3 px-4 text-right w-36">HALF PRICE (₹)</th>
+                        <th className="py-3 px-4 text-right w-36">FULL PRICE (₹)</th>
+                        <th className="py-3 px-4 text-center w-28">ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {section.items.map((dish, dIdx) => (
+                        <tr
+                          key={dIdx}
+                          className="hover:bg-slate-50/70 transition-colors"
+                        >
+                          <td className="py-3.5 px-4 font-semibold text-slate-800">
+                            <div className="flex items-center gap-2">
+                              <span>{dish.name}</span>
+                              {dish.available === false && (
+                                <span className="text-[10px] font-mono text-rose-500 bg-rose-50 px-2 py-0.5 rounded border border-rose-200/60">
+                                  Unavailable
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono text-slate-600">
+                            {dish.halfPrice !== null ? `₹${dish.halfPrice}` : "—"}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                            ₹{dish.fullPrice}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <button
+                              onClick={() => openEditCatalog(dish, section.category)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 bg-white text-slate-700 hover:text-blue-600 text-xs font-medium transition-all cursor-pointer shadow-2xs"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Catalog Dish */}
+      <Modal
+        isOpen={isEditCatalogOpen}
+        onClose={() => setIsEditCatalogOpen(false)}
+        title="Edit Catalog Item"
+        subtitle="Update dish name, category, pricing, and availability."
+      >
+        <form onSubmit={handleSaveCatalogDish} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Dish Name
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Paneer Tikka"
+              value={catalogDishName}
+              onChange={(e) => setCatalogDishName(e.target.value)}
+              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Category / Section
+            </label>
+            <select
+              value={catalogCategory}
+              onChange={(e) => setCatalogCategory(e.target.value)}
+              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+            >
+              <option value="Veg Starters">Veg Starters</option>
+              <option value="Non-Veg Starters">Non-Veg Starters</option>
+              <option value="Soups">Soups</option>
+              <option value="Main Course">Main Course</option>
+              <option value="Biryani">Biryani</option>
+              <option value="Chinese">Chinese</option>
+              <option value="Snacks">Snacks</option>
+              <option value="Desserts">Desserts</option>
+              <option value="Beverages">Beverages</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Half Price (₹) <span className="font-normal text-slate-400">(Optional)</span>
+              </label>
+              <input
+                type="number"
+                step="1"
+                placeholder="e.g. 180 (or leave blank)"
+                value={catalogHalfPrice}
+                onChange={(e) => setCatalogHalfPrice(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Full Price (₹)
+              </label>
+              <input
+                type="number"
+                step="1"
+                required
+                placeholder="e.g. 320"
+                value={catalogFullPrice}
+                onChange={(e) => setCatalogFullPrice(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="catalogAvail"
+              checked={catalogAvailable}
+              onChange={(e) => setCatalogAvailable(e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+            />
+            <label htmlFor="catalogAvail" className="text-xs font-semibold text-slate-800 cursor-pointer">
+              Item Available in Restaurant Catalog
+            </label>
+          </div>
+
+          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsEditCatalogOpen(false)}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-sm cursor-pointer"
+            >
+              Save Catalog Changes
+            </button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Modal: Add/Edit Menu Item */}
       <Modal
         isOpen={isAddMenuOpen}
@@ -450,7 +826,7 @@ export default function MenuPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Price ($)
+                Price (₹)
               </label>
               <input
                 type="number"
@@ -570,7 +946,7 @@ export default function MenuPage() {
               >
                 {menuItems.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} (${m.price.toFixed(2)})
+                    {m.name} (₹{m.price.toFixed(2)})
                   </option>
                 ))}
               </select>
@@ -593,7 +969,7 @@ export default function MenuPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Discount ($)
+                Discount (₹)
               </label>
               <input
                 type="number"

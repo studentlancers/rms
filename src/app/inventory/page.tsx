@@ -33,7 +33,7 @@ export default function InventoryPage() {
       name: "Atlantic salmon",
       category: "Protein",
       onHand: "3.2 kg",
-      unitCost: "$24.00 / kg",
+      unitCost: "₹24.00 / kg",
       percentage: 18,
       status: "Low",
     },
@@ -41,7 +41,7 @@ export default function InventoryPage() {
       name: "Burrata di Puglia",
       category: "Dairy",
       onHand: "8 portions",
-      unitCost: "$4.80 / pc",
+      unitCost: "₹4.80 / pc",
       percentage: 32,
       status: "Low",
     },
@@ -49,7 +49,7 @@ export default function InventoryPage() {
       name: "Domaine des Hâtes",
       category: "Beverage",
       onHand: "14 bottles",
-      unitCost: "$28.00 / bt",
+      unitCost: "₹28.00 / bt",
       percentage: 69,
       status: "Healthy",
     },
@@ -57,7 +57,7 @@ export default function InventoryPage() {
       name: "Heirloom tomatoes",
       category: "Produce",
       onHand: "12.5 kg",
-      unitCost: "$6.20 / kg",
+      unitCost: "₹6.20 / kg",
       percentage: 76,
       status: "Healthy",
     },
@@ -65,7 +65,7 @@ export default function InventoryPage() {
       name: "Sourdough flour",
       category: "Dry goods",
       onHand: "24 kg",
-      unitCost: "$2.40 / kg",
+      unitCost: "₹2.40 / kg",
       percentage: 84,
       status: "Healthy",
     },
@@ -90,7 +90,7 @@ export default function InventoryPage() {
       name: newItemName,
       category: newItemCategory,
       onHand: newItemOnHand || "10 units",
-      unitCost: newItemUnitCost || "$10.00 / unit",
+      unitCost: newItemUnitCost || "₹10.00 / unit",
       percentage: 80,
       status: "Healthy",
     };
@@ -100,6 +100,10 @@ export default function InventoryPage() {
     setNewItemName("");
     setNewItemUnitCost("");
   };
+
+  const lowStockCount = inventoryItems.filter(
+    (item) => item.status === "Low" || item.percentage <= 35
+  ).length;
 
   const filteredItems = inventoryItems.filter((item) => {
     const matchesSearch =
@@ -137,13 +141,13 @@ export default function InventoryPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="INVENTORY VALUE"
-          value="$28,460"
+          value="₹28,460"
           subtext="↗ 4.2% this month"
         />
         <StatCard
-          label="ITEMS TO REORDER"
-          value="8"
-          subtext="↘ 3 urgent"
+          label="LOW STOCK"
+          value={lowStockCount.toString()}
+          subtext="↘ Items below threshold"
         />
         <StatCard
           label="FOOD COST THIS MONTH"
@@ -196,10 +200,9 @@ export default function InventoryPage() {
             <thead>
               <tr className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
                 <th className="py-3 px-4">ITEM</th>
-                <th className="py-3 px-4">ON HAND</th>
+                <th className="py-3 px-4">STOCK</th>
                 <th className="py-3 px-4">UNIT COST</th>
                 <th className="py-3 px-4 w-48">STOCK LEVEL</th>
-                <th className="py-3 px-4">STATUS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
@@ -246,10 +249,6 @@ export default function InventoryPage() {
                         {item.percentage}%
                       </span>
                     </div>
-                  </td>
-
-                  <td className="py-4 px-4">
-                    <StatusBadge status={item.status} />
                   </td>
                 </tr>
               ))}
@@ -334,7 +333,7 @@ export default function InventoryPage() {
               </label>
               <input
                 type="text"
-                placeholder="e.g. $42.00 / kg"
+                placeholder="e.g. ₹42.00 / kg"
                 value={newItemUnitCost}
                 onChange={(e) => setNewItemUnitCost(e.target.value)}
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
