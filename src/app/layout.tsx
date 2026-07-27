@@ -1,8 +1,20 @@
 import type { Metadata } from "next";
-import { Calistoga, Inter, JetBrains_Mono } from "next/font/google";
+import {
+  Calistoga,
+  Inter,
+  JetBrains_Mono,
+  Geist,
+} from "next/font/google";
 import { AuthProvider } from "@/context/auth-context";
 import AppShell from "@/components/layout/app-shell";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,12 +46,21 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${calistoga.variable} ${jetBrainsMono.variable} h-full antialiased`}
-    >
+      className={cn(
+        "h-full",
+        "antialiased",
+        inter.variable,
+        calistoga.variable,
+        jetBrainsMono.variable,
+        "font-sans",
+        geist.variable,
+      )}>
       <body className="h-screen w-screen overflow-hidden bg-[#fafafa] text-slate-900 font-sans">
-        <AuthProvider>
-          <AppShell>{children}</AppShell>
-        </AuthProvider>
+        <TooltipProvider>
+          <AuthProvider>
+            <AppShell>{children}</AppShell>
+          </AuthProvider>
+        </TooltipProvider>
       </body>
     </html>
   );
