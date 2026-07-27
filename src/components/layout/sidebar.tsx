@@ -29,13 +29,13 @@ import { cn } from "@/lib/utils";
 // 6. Staff
 // 7. Reports
 const navigationItems = [
-  { name: "Overview", href: "/", icon: LayoutDashboard },
-  { name: "Operations", href: "/operations", icon: ShoppingBag },
-  { name: "Inventory", href: "/inventory", icon: Package },
-  { name: "Expenses", href: "/expenses", icon: Receipt },
-  { name: "Menu & Billing", href: "/menu", icon: UtensilsCrossed },
-  { name: "Staff", href: "/staff", icon: Users },
-  { name: "Reports", href: "/reports", icon: FileText },
+  { name: "Overview", href: "/owner", icon: LayoutDashboard },
+  { name: "Operations", href: "/owner/operations", icon: ShoppingBag },
+  { name: "Inventory", href: "/owner/inventory", icon: Package },
+  { name: "Expenses", href: "/owner/expenses", icon: Receipt },
+  { name: "Menu & Billing", href: "/owner/menu", icon: UtensilsCrossed },
+  { name: "Staff", href: "/owner/staff", icon: Users },
+  { name: "Reports", href: "/owner/reports", icon: FileText },
 ];
 
 interface SidebarProps {
@@ -71,7 +71,7 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
         <div>
           <div className="p-6 flex items-center justify-between">
             <Link
-              href="/"
+              href="/owner"
               onClick={onMobileClose}
               className="flex items-center gap-3 group"
             >
@@ -113,8 +113,8 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
               {navigationItems.map((item) => {
                 const Icon = item.icon;
                 const isActive =
-                  item.href === "/"
-                    ? pathname === "/"
+                  item.href === "/owner"
+                    ? pathname === "/owner" || pathname === "/owner/dashboard" || pathname === "/"
                     : pathname.startsWith(item.href);
 
                 return (
@@ -147,11 +147,11 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
         <div className="p-3 space-y-4">
           <div className="space-y-1 pt-4 border-t border-slate-900">
             <Link
-              href="/settings"
+              href="/owner/settings"
               onClick={onMobileClose}
               className={cn(
                 "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                pathname.startsWith("/settings")
+                pathname.startsWith("/owner/settings")
                   ? "bg-slate-800/80 text-white border border-slate-700/50"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
               )}
@@ -161,11 +161,11 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
             </Link>
 
             <Link
-              href="/help"
+              href="/owner/help"
               onClick={onMobileClose}
               className={cn(
                 "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                pathname.startsWith("/help")
+                pathname.startsWith("/owner/help")
                   ? "bg-slate-800/80 text-white border border-slate-700/50"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
               )}

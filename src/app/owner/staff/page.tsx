@@ -4,6 +4,17 @@ import React, { useState } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
 import { Plus, ChevronRight, Users, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -133,11 +144,11 @@ export default function StaffPage() {
   const getAttendanceBadgeStyles = (status: "Present" | "Absent" | "Leave") => {
     switch (status) {
       case "Present":
-        return "bg-emerald-50 text-emerald-600 border-emerald-200/60";
+        return "bg-emerald-50 text-emerald-600 border-emerald-200/60 font-semibold";
       case "Absent":
-        return "bg-rose-50 text-rose-600 border-rose-200/60";
+        return "bg-rose-50 text-rose-600 border-rose-200/60 font-semibold";
       case "Leave":
-        return "bg-amber-50 text-amber-600 border-amber-200/60";
+        return "bg-amber-50 text-amber-600 border-amber-200/60 font-semibold";
     }
   };
 
@@ -155,13 +166,13 @@ export default function StaffPage() {
           </p>
         </div>
 
-        <button
+        <Button
           onClick={() => setIsAddStaffOpen(true)}
-          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer"
+          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer h-auto border-none"
         >
           <Plus className="w-4 h-4" />
           <span>Add team member</span>
-        </button>
+        </Button>
       </div>
 
       {/* Top 3 Stat Cards */}
@@ -235,57 +246,56 @@ export default function StaffPage() {
           </div>
 
           {/* Data Table with Read-only Attendance Status */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
-                  <th className="py-3 px-4">TEAM MEMBER</th>
-                  <th className="py-3 px-4">ROLE</th>
-                  <th className="py-3 px-4">DEPARTMENT</th>
-                  <th className="py-3 px-4">ATTENDANCE</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {teamMembers.map((member) => (
-                  <tr
-                    key={member.id}
-                    className="hover:bg-slate-50/80 transition-colors group"
-                  >
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center border border-blue-200/60">
-                          {member.initials}
-                        </div>
-                        <span className="font-semibold text-slate-900">
-                          {member.name}
-                        </span>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TEAM MEMBER</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ROLE</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DEPARTMENT</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ATTENDANCE</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100 text-xs">
+              {teamMembers.map((member) => (
+                <TableRow
+                  key={member.id}
+                  className="hover:bg-slate-50/80 transition-colors border-slate-100 group"
+                >
+                  <TableCell className="py-4 px-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center border border-blue-200/60">
+                        {member.initials}
                       </div>
-                    </td>
-
-                    <td className="py-4 px-4 text-slate-600 font-medium">
-                      {member.role}
-                    </td>
-
-                    <td className="py-4 px-4 text-slate-500">
-                      {member.department}
-                    </td>
-
-                    {/* Read-only Attendance Badge */}
-                    <td className="py-4 px-4">
-                      <span
-                        className={cn(
-                          "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border select-none",
-                          getAttendanceBadgeStyles(member.attendance)
-                        )}
-                      >
-                        {member.attendance}
+                      <span className="font-semibold text-slate-900">
+                        {member.name}
                       </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-slate-600 font-medium">
+                    {member.role}
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-slate-500">
+                    {member.department}
+                  </TableCell>
+
+                  {/* Read-only Attendance Badge */}
+                  <TableCell className="py-4 px-4">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "h-auto inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border select-none",
+                        getAttendanceBadgeStyles(member.attendance)
+                      )}
+                    >
+                      {member.attendance}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -306,57 +316,55 @@ export default function StaffPage() {
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
-                  <th className="py-3 px-4">STAFF NAME</th>
-                  <th className="py-3 px-4">ROLE</th>
-                  <th className="py-3 px-4 text-right">MONTHLY SALARY (₹)</th>
-                  <th className="py-3 px-4 text-right">ADVANCE PAID (₹)</th>
-                  <th className="py-3 px-4 text-right">REMAINING SALARY (₹)</th>
-                  <th className="py-3 px-4">LAST PAID DATE</th>
-                  <th className="py-3 px-4">PAYMENT STATUS</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {salaryRecords.map((record) => (
-                  <tr
-                    key={record.id}
-                    className="hover:bg-slate-50/80 transition-colors"
-                  >
-                    <td className="py-4 px-4 font-semibold text-slate-900">
-                      {record.name}
-                    </td>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STAFF NAME</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ROLE</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">MONTHLY SALARY (₹)</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ADVANCE PAID (₹)</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">REMAINING SALARY (₹)</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">LAST PAID DATE</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">PAYMENT STATUS</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100 text-xs">
+              {salaryRecords.map((record) => (
+                <TableRow
+                  key={record.id}
+                  className="hover:bg-slate-50/80 transition-colors border-slate-100"
+                >
+                  <TableCell className="py-4 px-4 font-semibold text-slate-900">
+                    {record.name}
+                  </TableCell>
 
-                    <td className="py-4 px-4 text-slate-600 font-medium">
-                      {record.role}
-                    </td>
+                  <TableCell className="py-4 px-4 text-slate-600 font-medium">
+                    {record.role}
+                  </TableCell>
 
-                    <td className="py-4 px-4 text-right font-mono font-semibold text-slate-900">
-                      ₹{record.monthlySalary.toLocaleString("en-IN")}
-                    </td>
+                  <TableCell className="py-4 px-4 text-right font-mono font-semibold text-slate-900">
+                    ₹{record.monthlySalary.toLocaleString("en-IN")}
+                  </TableCell>
 
-                    <td className="py-4 px-4 text-right font-mono text-amber-600">
-                      ₹{record.advancePaid.toLocaleString("en-IN")}
-                    </td>
+                  <TableCell className="py-4 px-4 text-right font-mono text-amber-600">
+                    ₹{record.advancePaid.toLocaleString("en-IN")}
+                  </TableCell>
 
-                    <td className="py-4 px-4 text-right font-mono font-bold text-blue-600">
-                      ₹{record.remainingSalary.toLocaleString("en-IN")}
-                    </td>
+                  <TableCell className="py-4 px-4 text-right font-mono font-bold text-blue-600">
+                    ₹{record.remainingSalary.toLocaleString("en-IN")}
+                  </TableCell>
 
-                    <td className="py-4 px-4 font-mono text-slate-500">
-                      {record.lastPaidDate}
-                    </td>
+                  <TableCell className="py-4 px-4 font-mono text-slate-500">
+                    {record.lastPaidDate}
+                  </TableCell>
 
-                    <td className="py-4 px-4">
-                      <StatusBadge status={record.paymentStatus} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  <TableCell className="py-4 px-4">
+                    <StatusBadge status={record.paymentStatus} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -372,10 +380,10 @@ export default function StaffPage() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Full Name
             </label>
-            <input
+            <Input
               type="text"
               placeholder="e.g. Maya Patel"
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
             />
           </div>
 
@@ -384,10 +392,10 @@ export default function StaffPage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Role
               </label>
-              <input
+              <Input
                 type="text"
                 placeholder="e.g. Head Sommelier"
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
               />
             </div>
 
@@ -395,7 +403,7 @@ export default function StaffPage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Department
               </label>
-              <select className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20">
+              <select className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 bg-transparent">
                 <option value="Front of house">Front of house</option>
                 <option value="Kitchen">Kitchen</option>
                 <option value="Operations">Operations</option>
@@ -405,21 +413,22 @@ export default function StaffPage() {
           </div>
 
           <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setIsAddStaffOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => {
                 alert("Team member invited!");
                 setIsAddStaffOpen(false);
               }}
-              className="px-5 py-2 rounded-xl bg-[#0052ff] text-[#ffffff] text-xs font-semibold shadow-sm"
+              className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-sm border-none"
             >
               Send Invite
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -453,15 +462,16 @@ export default function StaffPage() {
           </div>
 
           <div className="flex justify-end pt-2">
-            <button
+            <Button
               onClick={() => setIsScheduleOpen(false)}
-              className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-xl"
+              className="px-4 py-2 h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl border-none"
             >
               Close Schedule
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
     </div>
   );
 }
+

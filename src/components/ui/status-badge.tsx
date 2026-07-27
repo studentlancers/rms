@@ -1,4 +1,5 @@
 import React from "react";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type StatusType =
@@ -39,14 +40,16 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   };
 
   return (
-    <span
+    <Badge
+      variant="outline"
       className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors",
+        "h-auto inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors",
         getStyles(),
         className
       )}
     >
       {status}
-    </span>
+    </Badge>
   );
 }
+

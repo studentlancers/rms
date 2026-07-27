@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (email) {
       setUser((prev) => ({ ...prev, email }));
     }
-    router.push("/");
+    router.push("/owner");
   };
 
   const logout = () => {

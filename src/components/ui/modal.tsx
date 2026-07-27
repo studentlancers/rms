@@ -1,8 +1,14 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { X } from "lucide-react";
+import React from "react";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 interface ModalProps {
   isOpen: boolean;
@@ -21,51 +27,28 @@ export function Modal({
   children,
   className,
 }: ModalProps) {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-      window.addEventListener("keydown", handleKeyDown);
-    }
-    return () => {
-      document.body.style.overflow = "auto";
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
         className={cn(
-          "bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200",
+          "bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg p-6 overflow-hidden gap-0 sm:max-w-lg",
           className
         )}
       >
-        {/* Header */}
-        <div className="p-6 border-b border-slate-100 flex items-start justify-between">
-          <div>
-            <h3 className="font-display text-xl font-semibold text-slate-900">
-              {title}
-            </h3>
-            {subtitle && (
-              <p className="text-xs text-slate-500 mt-1">{subtitle}</p>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        <DialogHeader className="p-0 border-b border-slate-100 pb-4 text-left">
+          <DialogTitle className="font-display text-xl font-semibold text-slate-900 leading-tight">
+            {title}
+          </DialogTitle>
+          {subtitle && (
+            <DialogDescription className="text-xs text-slate-500 mt-1 font-normal">
+              {subtitle}
+            </DialogDescription>
+          )}
+        </DialogHeader>
 
-        {/* Content */}
-        <div className="p-6">{children}</div>
-      </div>
-    </div>
+        <div className="pt-4">{children}</div>
+      </DialogContent>
+    </Dialog>
   );
 }
+

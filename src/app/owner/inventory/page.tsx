@@ -4,6 +4,16 @@ import React, { useState } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from "@/components/ui/table";
 import { Plus, Search, Download, Package, FolderPlus } from "lucide-react";
 
 export default function InventoryPage() {
@@ -128,13 +138,13 @@ export default function InventoryPage() {
           </p>
         </div>
 
-        <button
+        <Button
           onClick={() => setIsAddItemOpen(true)}
-          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer"
+          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer h-auto border-none"
         >
           <Plus className="w-4 h-4" />
           <span>Add item</span>
-        </button>
+        </Button>
       </div>
 
       {/* Top 3 Stat Cards */}
@@ -160,13 +170,13 @@ export default function InventoryPage() {
       <div className="design-surface p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
+            <Input
               type="text"
               placeholder="Search inventory"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:bg-white transition-all"
+              className="w-full pl-9 pr-4 py-2 h-9 bg-slate-50 border-slate-200/80 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-600/20"
             />
           </div>
 
@@ -184,77 +194,76 @@ export default function InventoryPage() {
               ))}
             </select>
 
-            <button
+            <Button
+              variant="outline"
               onClick={() => alert("Exporting inventory CSV...")}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 h-9 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
               <span>Export</span>
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Data Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
-                <th className="py-3 px-4">ITEM</th>
-                <th className="py-3 px-4">STOCK</th>
-                <th className="py-3 px-4">UNIT COST</th>
-                <th className="py-3 px-4 w-48">STOCK LEVEL</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredItems.map((item, idx) => (
-                <tr
-                  key={idx}
-                  className="hover:bg-slate-50/80 transition-colors group"
-                >
-                  <td className="py-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200/60">
-                        <Package className="w-4 h-4" />
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ITEM</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STOCK</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">UNIT COST</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold w-48">STOCK LEVEL</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-slate-100 text-xs">
+            {filteredItems.map((item, idx) => (
+              <TableRow
+                key={idx}
+                className="hover:bg-slate-50/80 transition-colors border-slate-100 group"
+              >
+                <TableCell className="py-4 px-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200/60">
+                      <Package className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-slate-900">
+                        {item.name}
                       </div>
-                      <div>
-                        <div className="font-semibold text-slate-900">
-                          {item.name}
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          {item.category}
-                        </div>
+                      <div className="text-[11px] text-slate-400">
+                        {item.category}
                       </div>
                     </div>
-                  </td>
+                  </div>
+                </TableCell>
 
-                  <td className="py-4 px-4 font-semibold text-slate-800">
-                    {item.onHand}
-                  </td>
+                <TableCell className="py-4 px-4 font-semibold text-slate-800">
+                  {item.onHand}
+                </TableCell>
 
-                  <td className="py-4 px-4 text-slate-600 font-mono">
-                    {item.unitCost}
-                  </td>
+                <TableCell className="py-4 px-4 text-slate-600 font-mono">
+                  {item.unitCost}
+                </TableCell>
 
-                  <td className="py-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            item.percentage <= 35 ? "bg-orange-500" : "bg-blue-600"
-                          }`}
-                          style={{ width: `${item.percentage}%` }}
-                        />
-                      </div>
-                      <span className="text-[11px] font-mono text-slate-400 w-8">
-                        {item.percentage}%
-                      </span>
+                <TableCell className="py-4 px-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          item.percentage <= 35 ? "bg-orange-500" : "bg-blue-600"
+                        }`}
+                        style={{ width: `${item.percentage}%` }}
+                      />
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    <span className="text-[11px] font-mono text-slate-400 w-8">
+                      {item.percentage}%
+                    </span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
 
       {/* Modal: Add New Inventory Item with Dynamic Category Creation */}
@@ -269,13 +278,13 @@ export default function InventoryPage() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Item Name
             </label>
-            <input
+            <Input
               type="text"
               required
               placeholder="e.g. Wagyu Ribeye"
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
             />
           </div>
 
@@ -299,7 +308,7 @@ export default function InventoryPage() {
                 <select
                   value={newItemCategory}
                   onChange={(e) => setNewItemCategory(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+                  className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 bg-transparent"
                 >
                   {categories.map((cat) => (
                     <option key={cat} value={cat}>
@@ -309,20 +318,20 @@ export default function InventoryPage() {
                 </select>
               ) : (
                 <div className="flex gap-1.5">
-                  <input
+                  <Input
                     type="text"
                     placeholder="New category..."
                     value={customCategoryName}
                     onChange={(e) => setCustomCategoryName(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full px-2.5 py-1.5 h-9 rounded-lg border border-blue-300 text-xs focus-visible:ring-1 focus-visible:ring-blue-500"
                   />
-                  <button
+                  <Button
                     type="button"
                     onClick={handleAddCategory}
-                    className="px-2.5 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg shrink-0"
+                    className="px-2.5 py-1.5 h-9 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shrink-0 border-none"
                   >
                     Add
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -331,12 +340,12 @@ export default function InventoryPage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Unit Cost
               </label>
-              <input
+              <Input
                 type="text"
                 placeholder="e.g. ₹42.00 / kg"
                 value={newItemUnitCost}
                 onChange={(e) => setNewItemUnitCost(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
               />
             </div>
           </div>
@@ -345,32 +354,34 @@ export default function InventoryPage() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Quantity / Initial On Hand
             </label>
-            <input
+            <Input
               type="text"
               placeholder="e.g. 15.5 kg or 20 bottles"
               value={newItemOnHand}
               onChange={(e) => setNewItemOnHand(e.target.value)}
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
             />
           </div>
 
           <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={() => setIsAddItemOpen(false)}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-[#0052ff] text-white text-xs font-semibold shadow-sm cursor-pointer"
+              className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-sm cursor-pointer border-none"
             >
               Save Item
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
     </div>
   );
 }
+
