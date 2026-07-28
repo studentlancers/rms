@@ -1,15 +1,15 @@
+import AppShell from "@/components/layout/app-shell";
+import { Providers } from "@/components/layout/providers";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
 import {
   Calistoga,
+  Geist,
   Inter,
   JetBrains_Mono,
-  Geist,
 } from "next/font/google";
-import { AuthProvider } from "@/context/auth-context";
-import AppShell from "@/components/layout/app-shell";
 import "./globals.css";
-import { cn } from "@/lib/utils";
-import { TooltipProvider } from "@/components/ui/tooltip";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -57,9 +57,9 @@ export default function RootLayout({
       )}>
       <body className="h-screen w-screen overflow-hidden bg-[#fafafa] text-slate-900 font-sans">
         <TooltipProvider>
-          <AuthProvider>
+          <Providers>
             <AppShell>{children}</AppShell>
-          </AuthProvider>
+          </Providers>
         </TooltipProvider>
       </body>
     </html>

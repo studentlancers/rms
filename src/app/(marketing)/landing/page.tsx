@@ -9,7 +9,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#fafafa] text-slate-900 selection:bg-blue-500/20">
       {/* Public Marketing Header */}
       <header className="max-w-7xl mx-auto px-6 md:px-8 py-6 flex items-center justify-between">
-        <Link href="/owner" className="flex items-center gap-3 group">
+        <Link href="/dashboard" className="flex items-center gap-3 group">
           <div className="w-8 h-8 rounded-full bg-[#0052ff] text-white flex items-center justify-center font-bold text-sm shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
             M
           </div>
