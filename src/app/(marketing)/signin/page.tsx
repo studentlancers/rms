@@ -2,18 +2,42 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@/context/auth-context";
-import { Lock, ArrowLeft, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { Lock, ArrowLeft, ArrowRight, Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react";
+import { useAuthActions } from "@/lib/auth-action";
 
 export default function SignInPage() {
-  const { login } = useAuth();
+  const { signIn, signUp } = useAuthActions();
+  const [mode, setMode] = useState<"signin" | "signUp">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(email || "avery.lin@langham.com");
+    setError(null);
+    setLoading(true);
+
+    if (mode === "signin") {
+      const res = await signIn(email, password);
+      if (!res.success && res.error) {
+        setError(res.error.message || "Unable to sign in.");
+      }
+    } else {
+      if (!name.trim()) {
+        setError("Please enter your name");
+        setLoading(false);
+        return;
+      }
+      const res = await signUp(name, email, password);
+      if (!res.success && res.error) {
+        setError(res.error.message || "Unable to create account.");
+      }
+    }
+
+    setLoading(false);
   };
 
   return (
@@ -70,7 +94,7 @@ export default function SignInPage() {
         </div>
       </div>
 
-      {/* Right Column: Sign In Form Section */}
+      {/* Right Column: Sign In / Sign Up Form Section */}
       <div className="w-full lg:w-1/2 bg-white p-6 lg:p-10 flex flex-col justify-between h-full overflow-y-auto lg:overflow-hidden relative">
         {/* Top Right Back Link */}
         <div className="flex justify-end shrink-0">
@@ -86,34 +110,77 @@ export default function SignInPage() {
         {/* Central Form Container */}
         <div className="max-w-md mx-auto my-auto w-full space-y-4 py-2">
           <div>
-            <div className="design-section-label mb-2">WELCOME BACK</div>
+            <div className="design-section-label mb-2">
+              {mode === "signin" ? "WELCOME BACK" : "CREATE YOUR ACCOUNT"}
+            </div>
             <h2 className="font-display text-2xl lg:text-4xl font-semibold text-slate-900 tracking-tight">
-              Sign in to Mise.
+              {mode === "signin" ? "Sign in to Mise." : "Start with Mise."}
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Enter your details to access your workspace.
+              {mode === "signin"
+                ? "Enter your credentials to access your restaurant workspace."
+                : "Create an account as a restaurant owner to get started."}
             </p>
           </div>
 
-          {/* Social Google Login Button */}
-          <button
-            type="button"
-            onClick={() => login("avery.lin@langham.com")}
-            className="w-full py-2.5 px-4 border border-slate-200 hover:bg-slate-50 rounded-2xl text-xs font-semibold text-slate-800 flex items-center justify-center gap-2 transition-all shadow-2xs cursor-pointer"
-          >
-            <div className="w-4 h-4 rounded bg-black text-white text-[10px] font-bold flex items-center justify-center">
-              G
-            </div>
-            <span>Continue with Google</span>
-          </button>
-
-          {/* Divider */}
-          <div className="text-[10px] font-mono text-slate-400 font-semibold tracking-wider flex items-center gap-4 before:h-px before:flex-1 before:bg-slate-200/80 after:h-px after:flex-1 after:bg-slate-200/80 my-2">
-            OR CONTINUE WITH EMAIL
+          {/* Mode Switch Tabs */}
+          <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signin");
+                setError(null);
+              }}
+              className={`flex-1 py-2 rounded-lg transition-all ${
+                mode === "signin"
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Sign In
+            </button> 
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signUp");
+                setError(null);
+              }}
+              className={`flex-1 py-2 rounded-lg transition-all ${
+                mode === "signUp"
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Sign Up
+            </button>
           </div>
+
+          {/* Error Alert */}
+          {error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3.5">
+            {mode === "signUp" && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Full name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Avery Lin"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all bg-white"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Work email
@@ -133,20 +200,23 @@ export default function SignInPage() {
                 <label className="text-xs font-semibold text-slate-700">
                   Password
                 </label>
-                <button
-                  type="button"
-                  onClick={() => alert("Password reset email sent!")}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
-                >
-                  Forgot password?
-                </button>
+                {mode === "signin" && (
+                  <button
+                    type="button"
+                    onClick={() => alert("Password reset link available via admin.")}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                )}
               </div>
 
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
                   required
-                  placeholder="Enter your password"
+                  minLength={8}
+                  placeholder="At least 8 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all bg-white pr-10"
@@ -167,36 +237,60 @@ export default function SignInPage() {
 
             <button
               type="submit"
-              className="w-full py-3 rounded-2xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-sm font-semibold shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer mt-1"
+              disabled={loading}
+              className="w-full py-3 rounded-2xl bg-[#0052ff] hover:bg-[#0046dc] disabled:opacity-70 text-white text-sm font-semibold shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer mt-1"
             >
-              <span>Sign in</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>{mode === "signin" ? "Signing in..." : "Creating account..."}</span>
+                </>
+              ) : (
+                <>
+                  <span>{mode === "signin" ? "Sign in" : "Create Owner Account"}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 
-          {/* Footer Link */}
+          {/* Footer Toggle Link */}
           <div className="text-center text-xs text-slate-500 pt-1">
-            New to Mise?{" "}
-            <Link
-              href="/landing"
-              className="font-semibold text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              Start your free trial
-            </Link>
+            {mode === "signin" ? (
+              <>
+                New restaurant owner?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("signUp");
+                    setError(null);
+                  }}
+                  className="font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  Create an account
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("signin");
+                    setError(null);
+                  }}
+                  className="font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  Sign in instead
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         {/* Disclaimer */}
         <div className="text-[11px] text-slate-400 text-center shrink-0 pt-2">
-          By continuing, you agree to our{" "}
-          <a href="#" className="font-semibold text-slate-600 hover:underline">
-            Terms
-          </a>{" "}
-          and{" "}
-          <a href="#" className="font-semibold text-slate-600 hover:underline">
-            Privacy Policy
-          </a>
-          .
+          By continuing, you agree to our Terms and Privacy Policy.
         </div>
       </div>
     </div>

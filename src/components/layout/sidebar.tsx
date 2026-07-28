@@ -2,8 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useAuth } from "@/context/auth-context";
+import { usePathname, useParams } from "next/navigation";
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -13,29 +12,32 @@ import {
   Settings,
   HelpCircle,
   Globe,
-  LogOut,
   X,
   UtensilsCrossed,
   Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Exact Sidebar Menu Order:
-// 1. Overview
-// 2. Operations
-// 3. Inventory
-// 4. Expenses
-// 5. Menu & Billing
-// 6. Staff
-// 7. Reports
-const navigationItems = [
-  { name: "Overview", href: "/owner", icon: LayoutDashboard },
-  { name: "Operations", href: "/owner/operations", icon: ShoppingBag },
-  { name: "Inventory", href: "/owner/inventory", icon: Package },
-  { name: "Expenses", href: "/owner/expenses", icon: Receipt },
-  { name: "Menu & Billing", href: "/owner/menu", icon: UtensilsCrossed },
-  { name: "Staff", href: "/owner/staff", icon: Users },
-  { name: "Reports", href: "/owner/reports", icon: FileText },
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+
+import { OrganizationSwitcher } from "@/components/auth/organization/organization-switcher";
+import { UserButton } from "@/components/auth/user/user-button";
+import { useAuth } from "@/hooks/use-auth";
+
+const rawNavigationItems = [
+  { name: "Overview", path: "", icon: LayoutDashboard },
+  { name: "Operations", path: "/operations", icon: ShoppingBag },
+  { name: "Inventory", path: "/inventory", icon: Package },
+  { name: "Expenses", path: "/expenses", icon: Receipt },
+  { name: "Menu & Billing", path: "/menu", icon: UtensilsCrossed },
+  { name: "Staff", path: "/staff", icon: Users },
+  { name: "Reports", path: "/reports", icon: FileText },
 ];
 
 interface SidebarProps {
@@ -45,10 +47,25 @@ interface SidebarProps {
 
 export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const params = useParams();
+  const { activeOrg } = useAuth();
 
-  // Hide sidebar on public marketing landing page & sign-in page
-  if (pathname === "/landing" || pathname === "/signin") return null;
+  const slug = (params?.slug as string) || activeOrg?.slug || "restaurant";
+  const basePath = `/dashboard/${slug}`;
+
+  const navigationItems = rawNavigationItems.map((item) => ({
+    name: item.name,
+    href: `${basePath}${item.path}`,
+    icon: item.icon,
+  }));
+
+  // Hide sidebar on public marketing landing page, sign-in page & onboarding page
+  if (
+    pathname === "/landing" ||
+    pathname === "/signin" ||
+    pathname.startsWith("/onboarding")
+  )
+    return null;
 
   return (
     <>
@@ -67,44 +84,69 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
           isMobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
         )}
       >
-        {/* Top Header & Brand */}
+        {/* Top Header & Brand Section */}
         <div>
-          <div className="p-6 flex items-center justify-between">
-            <Link
-              href="/owner"
-              onClick={onMobileClose}
-              className="flex items-center gap-3 group"
-            >
-              <div className="w-8 h-8 rounded-full bg-[#0052ff] text-white flex items-center justify-center font-bold text-sm shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-                M
-              </div>
-              <span className="font-display text-xl font-semibold tracking-tight text-white">
-                Mise
-              </span>
-            </Link>
-
-            <div className="flex items-center gap-2">
+          <div className="p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
               <Link
-                href="/landing"
+                href={basePath}
                 onClick={onMobileClose}
-                title="Public Website"
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors text-xs flex items-center gap-1"
+                className="flex items-center gap-2.5 group"
               >
-                <Globe className="w-3.5 h-3.5" />
+                <div className="w-8 h-8 rounded-full bg-[#0052ff] text-white flex items-center justify-center font-bold text-sm shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
+                  M
+                </div>
+                <span className="font-display text-xl font-semibold tracking-tight text-white">
+                  Mise
+                </span>
               </Link>
 
-              {/* Close Mobile Button */}
-              <button
-                onClick={onMobileClose}
-                className="md:hidden p-1 rounded-lg text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Link
+                        href="/landing"
+                        onClick={onMobileClose}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                      </Link>
+                    }
+                  />
+                  <TooltipContent side="bottom" className="text-xs">
+                    Public Website
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* Close Mobile Button */}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={onMobileClose}
+                  className="md:hidden text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Better Auth UI Organization Switcher with custom dark theme styling */}
+            <div className="dark">
+              <OrganizationSwitcher
+                className="w-full justify-between bg-slate-900/90 hover:bg-slate-800/90 text-slate-100 border border-slate-800/80 rounded-xl px-3 py-2 text-left shadow-xs transition-colors"
+                align="start"
+                side="bottom"
+                sideOffset={6}
+                hidePersonal
+              />
             </div>
           </div>
 
+          <Separator className="bg-slate-900" />
+
           {/* Workspace Navigation */}
-          <div className="px-3 py-2">
+          <div className="px-3 py-3">
             <div className="px-3 mb-3 text-[10px] font-mono font-semibold tracking-widest text-slate-500 uppercase">
               Workspace
             </div>
@@ -113,8 +155,10 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
               {navigationItems.map((item) => {
                 const Icon = item.icon;
                 const isActive =
-                  item.href === "/owner"
-                    ? pathname === "/owner" || pathname === "/owner/dashboard" || pathname === "/"
+                  item.href === basePath
+                    ? pathname === basePath ||
+                      pathname === `${basePath}/dashboard` ||
+                      pathname === "/"
                     : pathname.startsWith(item.href);
 
                 return (
@@ -145,13 +189,13 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
 
         {/* Bottom Section */}
         <div className="p-3 space-y-4">
-          <div className="space-y-1 pt-4 border-t border-slate-900">
+          <div className="space-y-1 pt-3 border-t border-slate-900">
             <Link
-              href="/owner/settings"
+              href={`${basePath}/settings`}
               onClick={onMobileClose}
               className={cn(
                 "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                pathname.startsWith("/owner/settings")
+                pathname.startsWith(`${basePath}/settings`)
                   ? "bg-slate-800/80 text-white border border-slate-700/50"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
               )}
@@ -161,11 +205,11 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
             </Link>
 
             <Link
-              href="/owner/help"
+              href={`${basePath}/help`}
               onClick={onMobileClose}
               className={cn(
                 "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                pathname.startsWith("/owner/help")
+                pathname.startsWith(`${basePath}/help`)
                   ? "bg-slate-800/80 text-white border border-slate-700/50"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
               )}
@@ -175,32 +219,16 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
             </Link>
           </div>
 
-          {/* Single User Profile & Logout Action Card */}
-          <div className="bg-slate-900/80 border border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/30 shrink-0">
-                AL
-              </div>
-              <div className="text-left truncate">
-                <div className="text-xs font-semibold text-white leading-tight truncate">
-                  {user?.name || "Avery Lin"}
-                </div>
-                <div className="text-[10px] text-slate-500 leading-tight truncate">
-                  {user?.role || "General Manager"}
-                </div>
-              </div>
-            </div>
+          <Separator className="bg-slate-800/60" />
 
-            <button
-              onClick={() => {
-                if (onMobileClose) onMobileClose();
-                logout();
-              }}
-              title="Sign out"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+          {/* Better Auth UI User Profile & Logout Action Card */}
+          <div className="dark w-full">
+            <UserButton
+              className="w-full justify-between bg-slate-900/90 hover:bg-slate-800/90 text-slate-100 border border-slate-800/80 rounded-xl px-3 py-2.5 shadow-xs transition-colors text-left font-normal"
+              align="start"
+              
+              sideOffset={8}
+            />
           </div>
         </div>
       </aside>
