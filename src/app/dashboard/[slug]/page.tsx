@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Plus, ChevronDown, Sparkles, ChevronRight, Settings2 } from "lucide-react";
 
 export default function OverviewPage() {
+  const params = useParams();
+  const slug = (params?.slug as string) || "restaurant";
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isInsightsModalOpen, setIsInsightsModalOpen] = useState(false);
 
@@ -232,7 +235,7 @@ export default function OverviewPage() {
             </div>
 
             <Link
-              href="/owner/operations"
+              href={`/dashboard/${slug}/operations`}
               className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
             >
               <span>All bookings</span>
@@ -322,7 +325,7 @@ export default function OverviewPage() {
               </div>
 
               <Link
-                href="/owner/inventory"
+                href={`/dashboard/${slug}/inventory`}
                 className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
               >
                 View all

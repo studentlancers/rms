@@ -1,0 +1,283 @@
+// prisma/schema.prisma
+// Full Prisma Schema for HMS: Better Auth tables + Domain models
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URL is in prisma.config.ts (Prisma 7 requirement)
+}
+
+// ===========================================================================
+// Better Auth Core Tables
+// ===========================================================================
+
+model User {
+  id            String       @id
+  name          String
+  email         String       @unique
+  emailVerified Boolean      @default(false)
+  image         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  role          String?
+  banned        Boolean?     @default(false)
+  banReason     String?
+  banExpires    DateTime?
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]
+  invitations   Invitation[]
+
+  @@map("user")
+}
+
+model Session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String   @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+model Organization {
+  id          String       @id
+  name        String
+  slug        String?      @unique
+  logo        String?
+  metadata    String?
+  createdAt   DateTime     @default(now())
+  members     Member[]
+  invitations Invitation[]
+
+  @@map("organization")
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String
+  createdAt      DateTime     @default(now())
+
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String
+  expiresAt      DateTime
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@map("invitation")
+}
+
+// ===========================================================================
+// HMS Domain Models
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Menu
+// ---------------------------------------------------------------------------
+
+model Category {
+  id           String     @id @default(cuid())
+  restaurantId String     // Better Auth organizationId
+  name         String
+  sortOrder    Int        @default(0)
+  menuItems    MenuItem[]
+
+  @@index([restaurantId])
+}
+
+model MenuItem {
+  id           String   @id @default(cuid())
+  restaurantId String   // Better Auth organizationId
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  price        Float
+  isVeg        Boolean  @default(false)
+  isAvailable  Boolean  @default(true)
+  /// JSON array of { name: string, priceModifier: number }
+  variants     Json?
+
+  @@index([restaurantId])
+  @@index([categoryId])
+}
+
+// ---------------------------------------------------------------------------
+// Tables & Reservations
+// ---------------------------------------------------------------------------
+
+model Table {
+  id           String        @id @default(cuid())
+  restaurantId String        // Better Auth organizationId
+  tableNumber  String
+  capacity     Int
+  status       TableStatus   @default(FREE)
+  orders       Order[]
+  reservations Reservation[]
+
+  @@index([restaurantId])
+}
+
+enum TableStatus {
+  FREE
+  OCCUPIED
+  RESERVED
+}
+
+model Reservation {
+  id              String            @id @default(cuid())
+  restaurantId    String            // Better Auth organizationId
+  customerName    String
+  customerPhone   String
+  partySize       Int
+  reservationTime DateTime
+  tableId         String?
+  table           Table?            @relation(fields: [tableId], references: [id])
+  status          ReservationStatus @default(PENDING)
+  /// Better Auth user id of the staff member who logged this reservation
+  takenByUserId   String
+  notes           String?
+  createdAt       DateTime          @default(now())
+
+  @@index([restaurantId])
+  @@index([restaurantId, reservationTime])
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  CANCELLED
+  NO_SHOW
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+model Order {
+  id                String        @id @default(cuid())
+  restaurantId      String        // Better Auth organizationId
+  tableId           String?
+  table             Table?        @relation(fields: [tableId], references: [id])
+  /// Better Auth user id — orders are entered by staff, not customers
+  createdByUserId   String
+  orderType         OrderType
+  status            OrderStatus   @default(PENDING)
+  /// JSON array of { menuItemId, name, quantity, unitPrice, variant?, notes? }
+  items             Json
+  subtotal          Float
+  tax               Float
+  total             Float
+  paymentStatus     PaymentStatus @default(PENDING)
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  delivery          Delivery?
+
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@index([tableId])
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+// ---------------------------------------------------------------------------
+// Delivery
+// ---------------------------------------------------------------------------
+
+model Delivery {
+  id           String         @id @default(cuid())
+  restaurantId String         // Better Auth organizationId
+  orderId      String         @unique
+  order        Order          @relation(fields: [orderId], references: [id])
+  /// Better Auth user id of the staff member acting as rider
+  riderUserId  String
+  status       DeliveryStatus @default(ASSIGNED)
+  etaMinutes   Int?
+  createdAt    DateTime       @default(now())
+  deliveredAt  DateTime?
+
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+}
+
+enum DeliveryStatus {
+  ASSIGNED
+  IN_TRANSIT
+  NEARBY
+  DELIVERED
+}
