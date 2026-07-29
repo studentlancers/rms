@@ -80,12 +80,12 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
       {/* Sidebar Navigation */}
       <aside
         className={cn(
-          "w-64 bg-[#0a0e1a] text-slate-400 flex flex-col justify-between shrink-0 h-screen sticky top-0 border-r border-slate-900 select-none overflow-y-auto z-40 transition-transform duration-200 ease-in-out max-md:fixed max-md:inset-y-0 max-md:left-0",
+          "w-64 bg-[#0a0e1a] text-slate-400 flex flex-col justify-between shrink-0 h-screen sticky top-0 border-r border-slate-900 select-none overflow-hidden z-40 transition-transform duration-200 ease-in-out max-md:fixed max-md:inset-y-0 max-md:left-0",
           isMobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
         )}
       >
         {/* Top Header & Brand Section */}
-        <div>
+        <div className="shrink-0">
           <div className="p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <Link
@@ -144,51 +144,51 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
           </div>
 
           <Separator className="bg-slate-900" />
+        </div>
 
-          {/* Workspace Navigation */}
-          <div className="px-3 py-3">
-            <div className="px-3 mb-3 text-[10px] font-mono font-semibold tracking-widest text-slate-500 uppercase">
-              Workspace
-            </div>
-
-            <nav className="space-y-1">
-              {navigationItems.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  item.href === basePath
-                    ? pathname === basePath ||
-                      pathname === `${basePath}/dashboard` ||
-                      pathname === "/"
-                    : pathname.startsWith(item.href);
-
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    onClick={onMobileClose}
-                    className={cn(
-                      "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                      isActive
-                        ? "bg-slate-800/80 text-white shadow-sm border border-slate-700/50"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        "w-4 h-4",
-                        isActive ? "text-white" : "text-slate-400"
-                      )}
-                    />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-            </nav>
+        {/* Workspace Navigation */}
+        <div className="px-3 py-3 flex-1 overflow-y-auto min-h-0">
+          <div className="px-3 mb-3 text-[10px] font-mono font-semibold tracking-widest text-slate-500 uppercase">
+            Workspace
           </div>
+
+          <nav className="space-y-1">
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                item.href === basePath
+                  ? pathname === basePath ||
+                    pathname === `${basePath}/dashboard` ||
+                    pathname === "/"
+                  : pathname.startsWith(item.href);
+
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={onMobileClose}
+                  className={cn(
+                    "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
+                    isActive
+                      ? "bg-slate-800/80 text-white shadow-sm border border-slate-700/50"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "w-4 h-4",
+                      isActive ? "text-white" : "text-slate-400"
+                    )}
+                  />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
         {/* Bottom Section */}
-        <div className="p-3 space-y-4">
+        <div className="p-3 space-y-4 shrink-0">
           <div className="space-y-1 pt-3 border-t border-slate-900">
             <Link
               href={`${basePath}/settings`}
