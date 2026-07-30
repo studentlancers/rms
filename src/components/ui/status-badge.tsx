@@ -26,13 +26,25 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       case "seated":
       case "healthy":
       case "on shift":
+      case "available":
+      case "ready":
+      case "completed":
+      case "in stock":
         return "bg-emerald-50/80 text-emerald-600 border-emerald-200/60";
       case "waitlist":
       case "on break":
+      case "occupied":
+      case "reserved":
+      case "in progress":
+      case "low stock":
         return "bg-amber-50/80 text-amber-600 border-amber-200/60";
       case "low":
       case "urgent":
-        return "bg-orange-50/80 text-orange-600 border-orange-200/60";
+      case "cleaning":
+      case "billing":
+      case "warning":
+      case "out of stock":
+        return "bg-rose-50/80 text-rose-600 border-rose-200/60";
       case "scheduled":
       default:
         return "bg-slate-100 text-slate-500 border-slate-200/60";
