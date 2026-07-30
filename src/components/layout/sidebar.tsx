@@ -16,6 +16,9 @@ import {
   UtensilsCrossed,
   Receipt,
   LogOut,
+  ChefHat,
+  Bike,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +49,10 @@ const staffItems = [
   { name: "Inventory", href: "/staff/inventory", icon: Package },
   { name: "Menu & Billing", href: "/staff/menu", icon: UtensilsCrossed },
   { name: "Tables", href: "/staff/tables", icon: Users },
+  { name: "Orders", href: "/staff/orders", icon: ShoppingBag },
+  { name: "Today's Specials", href: "/staff/specials", icon: Sparkles },
+  { name: "Kitchen", href: "/staff/kitchen", icon: ChefHat },
+  { name: "Delivery", href: "/staff/delivery", icon: Bike },
   { name: "Logout", href: "/signin", icon: LogOut },
 ];
 
