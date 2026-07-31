@@ -60,9 +60,10 @@ export default function Header({
       })
       .toUpperCase();
 
+  const isStaff = pathname.startsWith("/staff");
   const displayVenue =
     venueText ||
-    `${activeOrg?.name || "My Restaurant"} · Main Operations`;
+    `${activeOrg?.name || "Grand Bistro"} · ${isStaff ? "Staff Workspace" : "Main Operations"}`;
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([
     {

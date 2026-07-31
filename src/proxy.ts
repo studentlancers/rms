@@ -73,17 +73,32 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 5. Org-scoped users: check organization count
+  // 5. Org-scoped users: fetch organizations and active member in parallel
   let userOrgs: Array<{ id: string; name: string; slug: string }> = [];
+  let member: { role: string; organizationId: string } | null = null;
+
   try {
-    const orgs = await auth.api.listOrganizations({
-      headers: request.headers,
-    });
+    const [orgs, activeMember] = await Promise.all([
+      auth.api.listOrganizations({ headers: request.headers }).catch(() => []),
+      auth.api.getActiveMember({ headers: request.headers }).catch(() => null),
+    ]);
+
     if (Array.isArray(orgs)) {
       userOrgs = orgs;
     }
+    member = activeMember;
+
+    if (!member && userOrgs.length > 0) {
+      await auth.api.setActiveOrganization({
+        body: { organizationId: userOrgs[0].id },
+        headers: request.headers,
+      });
+      member = await auth.api.getActiveMember({
+        headers: request.headers,
+      }).catch(() => null);
+    }
   } catch {
-    // If listing fails, treat as empty
+    // Ignore resolution errors
   }
 
   // GATE A: User has ZERO organizations -> MUST be on /onboarding/create-restaurant
@@ -94,26 +109,6 @@ export async function proxy(request: NextRequest) {
       );
     }
     return NextResponse.next();
-  }
-
-  // Ensure active organization is set on session
-  let member: { role: string; organizationId: string } | null = null;
-  try {
-    member = await auth.api.getActiveMember({
-      headers: request.headers,
-    });
-
-    if (!member && userOrgs.length > 0) {
-      await auth.api.setActiveOrganization({
-        body: { organizationId: userOrgs[0].id },
-        headers: request.headers,
-      });
-      member = await auth.api.getActiveMember({
-        headers: request.headers,
-      });
-    }
-  } catch {
-    // Ignore active member resolution errors
   }
 
   const activeOrg = userOrgs.find((o) => o.id === member?.organizationId) || userOrgs[0];
@@ -152,6 +147,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)",
   ],
 };
