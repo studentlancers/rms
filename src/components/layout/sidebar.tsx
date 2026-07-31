@@ -15,6 +15,10 @@ import {
   X,
   UtensilsCrossed,
   Receipt,
+  LogOut,
+  ChefHat,
+  Bike,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +44,18 @@ const rawNavigationItems = [
   { name: "Reports", path: "/reports", icon: FileText },
 ];
 
+const staffItems = [
+  { name: "Dashboard", href: "/staff", icon: LayoutDashboard },
+  { name: "Inventory", href: "/staff/inventory", icon: Package },
+  { name: "Menu & Billing", href: "/staff/menu", icon: UtensilsCrossed },
+  { name: "Tables", href: "/staff/tables", icon: Users },
+  { name: "Orders", href: "/staff/orders", icon: ShoppingBag },
+  { name: "Today's Specials", href: "/staff/specials", icon: Sparkles },
+  { name: "Kitchen", href: "/staff/kitchen", icon: ChefHat },
+  { name: "Delivery", href: "/staff/delivery", icon: Bike },
+  { name: "Logout", href: "/signin", icon: LogOut },
+];
+
 interface SidebarProps {
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -50,14 +66,17 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
   const params = useParams();
   const { activeOrg } = useAuth();
 
+  const isStaffRoute = pathname.startsWith("/staff");
   const slug = (params?.slug as string) || activeOrg?.slug || "restaurant";
   const basePath = `/dashboard/${slug}`;
 
-  const navigationItems = rawNavigationItems.map((item) => ({
-    name: item.name,
-    href: `${basePath}${item.path}`,
-    icon: item.icon,
-  }));
+  const navigationItems = isStaffRoute
+    ? staffItems
+    : rawNavigationItems.map((item) => ({
+        name: item.name,
+        href: `${basePath}${item.path}`,
+        icon: item.icon,
+      }));
 
   // Hide sidebar on public marketing landing page, sign-in page & onboarding page
   if (
@@ -80,16 +99,16 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
       {/* Sidebar Navigation */}
       <aside
         className={cn(
-          "w-64 bg-[#0a0e1a] text-slate-400 flex flex-col justify-between shrink-0 h-screen sticky top-0 border-r border-slate-900 select-none overflow-y-auto z-40 transition-transform duration-200 ease-in-out max-md:fixed max-md:inset-y-0 max-md:left-0",
+          "w-64 bg-[#0a0e1a] text-slate-400 flex flex-col justify-between shrink-0 h-screen sticky top-0 border-r border-slate-900 select-none overflow-hidden z-40 transition-transform duration-200 ease-in-out max-md:fixed max-md:inset-y-0 max-md:left-0",
           isMobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"
         )}
       >
         {/* Top Header & Brand Section */}
-        <div>
+        <div className="shrink-0">
           <div className="p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <Link
-                href={basePath}
+                href={isStaffRoute ? "/staff" : basePath}
                 onClick={onMobileClose}
                 className="flex items-center gap-2.5 group"
               >
@@ -144,80 +163,84 @@ export default function Sidebar({ isMobileOpen, onMobileClose }: SidebarProps) {
           </div>
 
           <Separator className="bg-slate-900" />
+        </div>
 
-          {/* Workspace Navigation */}
-          <div className="px-3 py-3">
-            <div className="px-3 mb-3 text-[10px] font-mono font-semibold tracking-widest text-slate-500 uppercase">
-              Workspace
-            </div>
-
-            <nav className="space-y-1">
-              {navigationItems.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  item.href === basePath
-                    ? pathname === basePath ||
-                      pathname === `${basePath}/dashboard` ||
-                      pathname === "/"
-                    : pathname.startsWith(item.href);
-
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    onClick={onMobileClose}
-                    className={cn(
-                      "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                      isActive
-                        ? "bg-slate-800/80 text-white shadow-sm border border-slate-700/50"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        "w-4 h-4",
-                        isActive ? "text-white" : "text-slate-400"
-                      )}
-                    />
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-            </nav>
+        {/* Workspace Navigation */}
+        <div className="px-3 py-3 flex-1 overflow-y-auto min-h-0">
+          <div className="px-3 mb-3 text-[10px] font-mono font-semibold tracking-widest text-slate-500 uppercase">
+            {isStaffRoute ? "Staff Workspace" : "Workspace"}
           </div>
+
+          <nav className="space-y-1">
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                item.href === "/staff"
+                  ? pathname === "/staff"
+                  : item.href === basePath
+                  ? pathname === basePath ||
+                    pathname === `${basePath}/dashboard` ||
+                    pathname === "/"
+                  : pathname.startsWith(item.href);
+
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={onMobileClose}
+                  className={cn(
+                    "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
+                    isActive
+                      ? "bg-slate-800/80 text-white shadow-sm border border-slate-700/50"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "w-4 h-4",
+                      isActive ? "text-white" : "text-slate-400"
+                    )}
+                  />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
         {/* Bottom Section */}
-        <div className="p-3 space-y-4">
-          <div className="space-y-1 pt-3 border-t border-slate-900">
-            <Link
-              href={`${basePath}/settings`}
-              onClick={onMobileClose}
-              className={cn(
-                "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                pathname.startsWith(`${basePath}/settings`)
-                  ? "bg-slate-800/80 text-white border border-slate-700/50"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
-              )}
-            >
-              <Settings className="w-4 h-4 text-slate-400" />
-              <span>Settings</span>
-            </Link>
+        <div className="p-3 space-y-4 shrink-0">
+          {!isStaffRoute && (
+            <div className="space-y-1 pt-3 border-t border-slate-900">
+              <Link
+                href={`${basePath}/settings`}
+                onClick={onMobileClose}
+                className={cn(
+                  "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
+                  pathname.startsWith(`${basePath}/settings`)
+                    ? "bg-slate-800/80 text-white border border-slate-700/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                )}
+              >
+                <Settings className="w-4 h-4 text-slate-400" />
+                <span>Settings</span>
+              </Link>
 
-            <Link
-              href={`${basePath}/help`}
-              onClick={onMobileClose}
-              className={cn(
-                "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
-                pathname.startsWith(`${basePath}/help`)
-                  ? "bg-slate-800/80 text-white border border-slate-700/50"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
-              )}
-            >
-              <HelpCircle className="w-4 h-4 text-slate-400" />
-              <span>Help centre</span>
-            </Link>
-          </div>
+              <Link
+                href={`${basePath}/help`}
+                onClick={onMobileClose}
+                className={cn(
+                  "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150",
+                  pathname.startsWith(`${basePath}/help`)
+                    ? "bg-slate-800/80 text-white border border-slate-700/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                )}
+              >
+                <HelpCircle className="w-4 h-4 text-slate-400" />
+                <span>Help centre</span>
+              </Link>
+            </div>
+          )}
 
           <Separator className="bg-slate-800/60" />
 
