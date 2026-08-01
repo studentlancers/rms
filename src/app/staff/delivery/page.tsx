@@ -30,17 +30,18 @@ import {
   Eye,
 } from "lucide-react";
 
-type BusinessStatus = "Pending" | "Done" | "Incomplete";
+type DeliveryStatus = "Preparing" | "In Progress" | "Delivered" | "Cancelled";
+type PaymentStatus = "Done" | "Incomplete";
 
 interface DeliveryOrder {
   id: string;
   customer: string;
   phone: string;
-  platform: "Swiggy" | "Zomato" | "Direct" | "Pickup";
+  platform: "Swiggy" | "Zomato" | "Direct Website" | "Phone Order";
   partner: string;
   amount: string;
-  payment: BusinessStatus;
-  status: BusinessStatus;
+  payment: PaymentStatus;
+  status: DeliveryStatus;
   estTime: string;
 }
 
@@ -53,8 +54,8 @@ const initialDeliveryOrders: DeliveryOrder[] = [
     partner: "Swiggy Rider #41",
     amount: "₹890.00",
     payment: "Done",
-    status: "Done",
-    estTime: "Completed",
+    status: "In Progress",
+    estTime: "15 mins",
   },
   {
     id: "DEL-902",
@@ -64,29 +65,29 @@ const initialDeliveryOrders: DeliveryOrder[] = [
     partner: "Zomato Valet #88",
     amount: "₹1,240.00",
     payment: "Done",
-    status: "Pending",
+    status: "Preparing",
     estTime: "25 mins",
   },
   {
     id: "DEL-903",
     customer: "Meera Nair",
     phone: "+91 97654 32109",
-    platform: "Direct",
+    platform: "Direct Website",
     partner: "House Rider (Suresh)",
     amount: "₹650.00",
     payment: "Incomplete",
-    status: "Pending",
+    status: "In Progress",
     estTime: "20 mins",
   },
   {
     id: "DEL-904",
     customer: "Siddharth Gupta",
     phone: "+91 99887 76655",
-    platform: "Pickup",
+    platform: "Phone Order",
     partner: "Self Pickup",
     amount: "₹420.00",
     payment: "Done",
-    status: "Done",
+    status: "Delivered",
     estTime: "Completed",
   },
 ];
@@ -99,7 +100,7 @@ export default function DeliveryOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<DeliveryOrder | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  const handleStatusUpdate = (id: string, newStatus: BusinessStatus) => {
+  const handleStatusUpdate = (id: string, newStatus: DeliveryStatus) => {
     setOrders((prev) =>
       prev.map((o) => (o.id === id ? { ...o, status: newStatus } : o))
     );
@@ -122,8 +123,8 @@ export default function DeliveryOrdersPage() {
   }, [orders, searchQuery, selectedPlatform, selectedStatus]);
 
   const totalDelivery = orders.length;
-  const pendingCount = orders.filter((o) => o.status === "Pending").length;
-  const doneCount = orders.filter((o) => o.status === "Done").length;
+  const inProgressCount = orders.filter((o) => o.status === "In Progress" || o.status === "Preparing").length;
+  const deliveredCount = orders.filter((o) => o.status === "Delivered").length;
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -135,7 +136,7 @@ export default function DeliveryOrdersPage() {
             Delivery Orders
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Manage Swiggy, Zomato, Direct, and Pickup order dispatches.
+            Manage Swiggy, Zomato, Direct, and Phone Order dispatches.
           </p>
         </div>
       </div>
@@ -149,15 +150,15 @@ export default function DeliveryOrdersPage() {
           trend={{ value: "↗ High volume", isPositive: true }}
         />
         <StatCard
-          label="PENDING DISPATCHES"
-          value={`${pendingCount} Orders`}
-          subtext="awaiting delivery"
+          label="IN PROGRESS / PREPARING"
+          value={`${inProgressCount} Orders`}
+          subtext="active dispatches"
           trend={{ value: "In Progress", isPositive: true }}
         />
         <StatCard
-          label="COMPLETED DELIVERIES"
-          value={`${doneCount} Orders`}
-          subtext="successfully delivered"
+          label="DELIVERED ORDERS"
+          value={`${deliveredCount} Orders`}
+          subtext="successfully completed"
           trend={{ value: "↗ 100% Fulfilled", isPositive: true }}
         />
       </div>
@@ -184,8 +185,8 @@ export default function DeliveryOrdersPage() {
               <option value="all">All Platforms</option>
               <option value="Swiggy">Swiggy</option>
               <option value="Zomato">Zomato</option>
-              <option value="Direct">Direct</option>
-              <option value="Pickup">Pickup</option>
+              <option value="Direct Website">Direct Website</option>
+              <option value="Phone Order">Phone Order</option>
             </select>
 
             <select
@@ -193,10 +194,11 @@ export default function DeliveryOrdersPage() {
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors focus:outline-none cursor-pointer h-9"
             >
-              <option value="all">All Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="Done">Done</option>
-              <option value="Incomplete">Incomplete</option>
+              <option value="all">All Delivery Statuses</option>
+              <option value="Preparing">Preparing</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Delivered">Delivered</option>
+              <option value="Cancelled">Cancelled</option>
             </select>
           </div>
         </div>
@@ -243,10 +245,10 @@ export default function DeliveryOrdersPage() {
                     {order.amount}
                   </TableCell>
                   <TableCell className="py-4 px-4">
-                    <StatusBadge status={order.payment === "Done" ? "Healthy" : order.payment === "Pending" ? "Low" : "Critical"} />
+                    <StatusBadge status={order.payment} />
                   </TableCell>
                   <TableCell className="py-4 px-4">
-                    <StatusBadge status={order.status === "Done" ? "Healthy" : order.status === "Pending" ? "Low" : "Critical"} />
+                    <StatusBadge status={order.status} />
                   </TableCell>
                   <TableCell className="py-4 px-4 font-mono text-slate-500 hidden lg:table-cell">
                     {order.estTime}
@@ -278,13 +280,13 @@ export default function DeliveryOrdersPage() {
                           <Phone className="w-3.5 h-3.5" />
                           <span>Call Customer</span>
                         </DropdownMenuItem>
-                        {order.status !== "Done" && (
+                        {order.status !== "Delivered" && (
                           <DropdownMenuItem
-                            onClick={() => handleStatusUpdate(order.id, "Done")}
-                            className="text-xs gap-2 text-purple-600 cursor-pointer"
+                            onClick={() => handleStatusUpdate(order.id, "Delivered")}
+                            className="text-xs gap-2 text-[#0052ff] cursor-pointer font-semibold"
                           >
                             <Bike className="w-3.5 h-3.5" />
-                            <span>Mark Done</span>
+                            <span>Mark Delivered</span>
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -310,7 +312,7 @@ export default function DeliveryOrdersPage() {
                 <span className="text-slate-500 block">Customer Info:</span>
                 <span className="font-semibold text-slate-900">{selectedOrder.customer} ({selectedOrder.phone})</span>
               </div>
-              <StatusBadge status={selectedOrder.status === "Done" ? "Healthy" : "Low"} />
+              <StatusBadge status={selectedOrder.status} />
             </div>
 
             <div className="grid grid-cols-2 gap-3 p-3 border border-slate-200 rounded-lg">
