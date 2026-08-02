@@ -38,10 +38,11 @@ export type InviteMemberDialogProps = {
 }
 
 const pickDefaultRole = (keys: string[]) =>
-  keys.includes("member") ? "member" : (keys.at(-1) ?? "")
+  // If the organization has a "staff" role, we default to that. Otherwise, we default to the last role in the list (if any).
+  keys.includes("staff") ? "staff" : (keys.at(-1) ?? "")
 
 /**
- * Render a dialog for inviting a member to the organization.
+ * Render a dialog for inviting a staff to the organization.
  */
 export function InviteMemberDialog({
   open,
