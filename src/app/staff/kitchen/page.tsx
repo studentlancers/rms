@@ -183,7 +183,7 @@ export default function KitchenDisplayPage() {
         </div>
 
         {/* Data Table */}
-        <Table>
+        <Table className="w-full">
           <TableHeader>
             <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TOKEN #</TableHead>
@@ -216,17 +216,17 @@ export default function KitchenDisplayPage() {
                       <div className="font-semibold text-slate-800">{order.table}</div>
                       <div className="text-[10px] text-slate-400 font-mono">{order.orderId}</div>
                     </TableCell>
-                    <TableCell className="py-4 px-4 font-medium text-slate-900 max-w-[200px]">
+                    <TableCell className="py-4 px-4 font-medium text-slate-900 max-w-[180px] truncate">
                       {order.items}
                     </TableCell>
-                    <TableCell className="py-4 px-4 text-rose-600 font-medium hidden md:table-cell">
+                    <TableCell className="py-4 px-4 text-rose-600 font-medium hidden md:table-cell max-w-[150px] truncate">
                       {order.instructions || "None"}
                     </TableCell>
                     <TableCell className="py-4 px-4 text-slate-600 hidden lg:table-cell">
                       {order.chef}
                     </TableCell>
                     <TableCell className="py-4 px-4">
-                      <StatusBadge status={order.status === "Preparing" ? "In Progress" : order.status === "Ready" ? "Healthy" : "Scheduled"} />
+                      <StatusBadge status={order.status} />
                     </TableCell>
                     <TableCell className="py-4 px-4 font-mono font-bold">
                       <span className={isDelayed ? "text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200" : "text-slate-700"}>
@@ -279,8 +279,8 @@ export default function KitchenDisplayPage() {
               })
             )}
           </TableBody>
-        </Table>
-      </div>
+          </Table>
+        </div>
 
       {/* Kitchen Detail Modal */}
       {selectedOrder && isDetailOpen && (
