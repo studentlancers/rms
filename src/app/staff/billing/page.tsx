@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import Link from "next/link";
+
 interface BillItem {
   id: string;
   billNumber: string;
@@ -236,13 +238,13 @@ export default function StaffBillingPage() {
           </p>
         </div>
 
-        <Button
-          onClick={() => setIsCreateBillOpen(true)}
-          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer border-none"
+        <Link
+          href="/staff/billing/create"
+          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer border-none"
         >
           <Receipt className="w-4 h-4" />
           <span>Create New Bill</span>
-        </Button>
+        </Link>
       </div>
 
       {/* Payment Summary Stat Cards */}
