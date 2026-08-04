@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -15,7 +16,7 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { Plus, ChevronRight, Users, CreditCard } from "lucide-react";
+import { Plus, ChevronRight, Users, CreditCard, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface StaffMember {
@@ -39,6 +40,10 @@ export interface SalaryRecord {
 }
 
 export default function StaffPage() {
+  const router = useRouter();
+  const params = useParams();
+  const slug = (params?.slug as string) || "restaurant";
+
   const [activeTab, setActiveTab] = useState<"attendance" | "salary">("attendance");
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
@@ -253,6 +258,7 @@ export default function StaffPage() {
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ROLE</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DEPARTMENT</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ATTENDANCE</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="divide-y divide-slate-100 text-xs">
@@ -292,6 +298,18 @@ export default function StaffPage() {
                       {member.attendance}
                     </Badge>
                   </TableCell>
+
+                  <TableCell className="py-4 px-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => router.push(`/dashboard/${slug}/staff/${member.id}`)}
+                      className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-100/80 rounded-lg cursor-pointer transition-colors"
+                      title="View Staff Details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -326,10 +344,11 @@ export default function StaffPage() {
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">REMAINING SALARY (₹)</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">LAST PAID DATE</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">PAYMENT STATUS</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="divide-y divide-slate-100 text-xs">
-              {salaryRecords.map((record) => (
+              {salaryRecords.map((record, index) => (
                 <TableRow
                   key={record.id}
                   className="hover:bg-slate-50/80 transition-colors border-slate-100"
@@ -360,6 +379,18 @@ export default function StaffPage() {
 
                   <TableCell className="py-4 px-4">
                     <StatusBadge status={record.paymentStatus} />
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => router.push(`/dashboard/${slug}/staff/ST-${index + 1}`)}
+                      className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-100/80 rounded-lg cursor-pointer transition-colors"
+                      title="View Staff Details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

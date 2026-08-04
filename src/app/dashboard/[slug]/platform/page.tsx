@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal } from "@/components/ui/modal";
@@ -213,6 +214,10 @@ const platformTabs = [
 ];
 
 export default function AdminPlatformPage() {
+  const router = useRouter();
+  const params = useParams();
+  const slug = (params?.slug as string) || "restaurant";
+
   const [activeTab, setActiveTab] = useState<string>("all");
   const [orders] = useState<PlatformOrder[]>(initialPlatformOrders);
   const [performance] = useState<PlatformPerformance[]>(initialPlatformPerformance);
@@ -379,45 +384,17 @@ export default function AdminPlatformPage() {
                   </TableCell>
                   <TableCell className="py-4 px-4 font-mono text-slate-500">{order.createdTime}</TableCell>
                   <TableCell className="py-4 px-4 text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="h-8 w-8 text-slate-500 hover:text-slate-900 cursor-pointer flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
-                        <MoreVertical className="w-4 h-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase">Actions</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setIsDetailOpen(true);
-                          }}
-                          className="text-xs gap-2 text-slate-700 cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-blue-600" />
-                          <span>View Order</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setIsPrintOpen(true);
-                          }}
-                          className="text-xs gap-2 text-slate-700 cursor-pointer"
-                        >
-                          <Receipt className="w-3.5 h-3.5 text-purple-600" />
-                          <span>View Bill</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setSelectedOrder(order);
-                            setIsPrintOpen(true);
-                          }}
-                          className="text-xs gap-2 text-slate-700 cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Print Receipt</span>
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() =>
+                        router.push(`/dashboard/${slug}/platform/orders/${order.id}`)
+                      }
+                      className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-100/80 rounded-lg cursor-pointer transition-colors"
+                      title="View Order Details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))

@@ -7,10 +7,14 @@ import {
   LayoutDashboard,
   Package,
   UtensilsCrossed,
+  Receipt,
   LayoutGrid,
+  ShoppingBag,
+  Sparkles,
+  ChefHat,
+  Bike,
   LogOut,
   X,
-  ChefHat,
   BadgeCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,8 +23,14 @@ import { Button } from "@/components/ui/button";
 const staffNavigationItems = [
   { name: "Dashboard", href: "/staff", icon: LayoutDashboard },
   { name: "Inventory", href: "/staff/inventory", icon: Package },
-  { name: "Menu & Billing", href: "/staff/menu", icon: UtensilsCrossed },
+  { name: "Menu", href: "/staff/menu", icon: UtensilsCrossed },
+  { name: "Billing", href: "/staff/billing", icon: Receipt },
   { name: "Tables", href: "/staff/tables", icon: LayoutGrid },
+  { name: "Orders", href: "/staff/orders", icon: ShoppingBag },
+  { name: "Today's Specials", href: "/staff/specials", icon: Sparkles },
+  { name: "Kitchen", href: "/staff/kitchen", icon: ChefHat },
+  { name: "Delivery", href: "/staff/delivery", icon: Bike },
+  { name: "Logout", href: "/signin", icon: LogOut },
 ];
 
 interface StaffSidebarProps {
