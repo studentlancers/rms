@@ -43,32 +43,18 @@ const rawNavigationItems = [
   },
   { name: "Inventory", path: "/inventory", icon: Package },
   { name: "Expenses", path: "/expenses", icon: Receipt },
-  {
-    name: "Menu & Billing",
-    path: "/menu",
-    icon: UtensilsCrossed,
-  },
+  { name: "Menu", path: "/menu", icon: UtensilsCrossed },
+  { name: "Billing", path: "/billing", icon: Receipt },
   { name: "Staff", path: "/staff", icon: Users },
   { name: "Platform", path: "/platform", icon: Globe },
   { name: "Reports", path: "/reports", icon: FileText },
 ];
 
 const staffItems = [
-  {
-    name: "Dashboard",
-    href: "/staff",
-    icon: LayoutDashboard,
-  },
-  {
-    name: "Inventory",
-    href: "/staff/inventory",
-    icon: Package,
-  },
-  {
-    name: "Menu & Billing",
-    href: "/staff/menu",
-    icon: UtensilsCrossed,
-  },
+  { name: "Dashboard", href: "/staff", icon: LayoutDashboard },
+  { name: "Inventory", href: "/staff/inventory", icon: Package },
+  { name: "Menu", href: "/staff/menu", icon: UtensilsCrossed },
+  { name: "Billing", href: "/staff/billing", icon: Receipt },
   { name: "Tables", href: "/staff/tables", icon: Users },
   {
     name: "Orders",
