@@ -44,7 +44,7 @@ export async function listCategories() {
   return db.category.findMany({
     where: { restaurantId },
     orderBy: { sortOrder: "asc" },
-    include: { menuItems: { where: { isAvailable: true } } },
+    include: { menuItems: true },
   });
 }
 

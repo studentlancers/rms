@@ -138,7 +138,7 @@ export default function CreateRestaurantPage() {
               title="Lowercase letters, numbers, and hyphens only"
               value={slug}
               onChange={handleSlugChange}
-              className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all bg-white font-mono text-xs"
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 transition-all bg-white font-mono text-xs"
             />
             <p className="text-[11px] text-slate-400 mt-1">
               Auto-generated from name. Lowercase letters, numbers, and hyphens only.
