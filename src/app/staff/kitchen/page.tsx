@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal } from "@/components/ui/modal";
@@ -28,83 +28,91 @@ import {
   CheckCircle2,
   Play,
   Eye,
+  Loader2,
+  Clock,
 } from "lucide-react";
-
-interface KitchenOrder {
-  token: string;
-  orderId: string;
-  table: string;
-  items: string;
-  instructions: string;
-  chef: string;
-  status: "Pending" | "Preparing" | "Ready" | "Served";
-  waitingMins: number;
-}
-
-const initialKitchenOrders: KitchenOrder[] = [
-  {
-    token: "#KT-104",
-    orderId: "ORD-3001",
-    table: "Table 04",
-    items: "2x Butter Chicken, 4x Butter Naan, 1x Dal Makhani",
-    instructions: "Medium spicy, extra butter on naan",
-    chef: "Chef Vikram",
-    status: "Preparing",
-    waitingMins: 18, // Delayed > 15 mins
-  },
-  {
-    token: "#KT-105",
-    orderId: "ORD-3002",
-    table: "Table 02",
-    items: "1x Paneer Tikka, 2x Fresh Lime Soda",
-    instructions: "No onions, extra green chutney",
-    chef: "Chef Anish",
-    status: "Pending",
-    waitingMins: 6,
-  },
-  {
-    token: "#KT-106",
-    orderId: "ORD-3004",
-    table: "Delivery # Swiggy",
-    items: "2x Chili Chicken, 2x Schezwan Fried Rice",
-    instructions: "Pack extra cutlery and chili sauce",
-    chef: "Chef Vikram",
-    status: "Preparing",
-    waitingMins: 14,
-  },
-  {
-    token: "#KT-107",
-    orderId: "ORD-3005",
-    table: "Table 08",
-    items: "1x Mutton Seekh Kebab, 2x Cold Coffee",
-    instructions: "Serve coffee hot if requested",
-    chef: "Chef Ramesh",
-    status: "Pending",
-    waitingMins: 4,
-  },
-];
+import { toast } from "sonner";
+import { listLiveOrders, updateOrderStatus } from "@/actions/orders";
 
 export default function KitchenDisplayPage() {
-  const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>(initialKitchenOrders);
+  const [kitchenOrders, setKitchenOrders] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
-  const [selectedOrder, setSelectedOrder] = useState<KitchenOrder | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  // Status updates
-  const handleStatusUpdate = (token: string, newStatus: KitchenOrder["status"]) => {
-    setKitchenOrders((prev) =>
-      prev.map((o) => (o.token === token ? { ...o, status: newStatus } : o))
-    );
+  // Load active kitchen orders
+  const loadKitchenQueue = async (silent = false) => {
+    try {
+      if (!silent) setIsLoading(true);
+      const activeOrders = await listLiveOrders();
+      setKitchenOrders(activeOrders || []);
+    } catch (err: any) {
+      console.error("Error loading kitchen orders:", err);
+      if (!silent) toast.error(err.message || "Failed to load kitchen queue");
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
   };
 
+  useEffect(() => {
+    loadKitchenQueue();
+
+    // 5-second polling interval for real-time kitchen updates
+    const interval = setInterval(() => {
+      loadKitchenQueue(true);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Format Order ID
+  const formatOrderId = (id: string) => {
+    return `#KT-${id.slice(-4).toUpperCase()}`;
+  };
+
+  // Helper to format Items list
+  const formatItemsList = (items: any) => {
+    if (typeof items === "string") return items;
+    if (Array.isArray(items)) {
+      return items.map((i) => `${i.quantity}x ${i.name}`).join(", ");
+    }
+    return "Items";
+  };
+
+  // Calculate Waiting Minutes
+  const getWaitingMins = (createdAt: string) => {
+    const start = new Date(createdAt).getTime();
+    const now = new Date().getTime();
+    return Math.floor((now - start) / 60000) || 1;
+  };
+
+  // Status update handler
+  const handleStatusUpdate = async (orderId: string, newStatus: any) => {
+    try {
+      // Optimistic update
+      setKitchenOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+      );
+
+      await updateOrderStatus(orderId, newStatus);
+      toast.success(`Kitchen status updated to ${newStatus}`);
+      await loadKitchenQueue(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update kitchen status");
+      await loadKitchenQueue(true);
+    }
+  };
+
+  // Filtered Kitchen Orders
   const filteredOrders = useMemo(() => {
     return kitchenOrders.filter((order) => {
+      const token = formatOrderId(order.id);
       const matchesSearch =
-        order.token.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.orderId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.table.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.chef.toLowerCase().includes(searchQuery.toLowerCase());
+        token.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (order.table?.tableNumber && order.table.tableNumber.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesStatus =
         selectedStatus === "all" || order.status === selectedStatus;
@@ -114,8 +122,8 @@ export default function KitchenDisplayPage() {
   }, [kitchenOrders, searchQuery, selectedStatus]);
 
   const activeTokens = kitchenOrders.length;
-  const preparingCount = kitchenOrders.filter((o) => o.status === "Preparing").length;
-  const delayedCount = kitchenOrders.filter((o) => o.waitingMins >= 15).length;
+  const preparingCount = kitchenOrders.filter((o) => o.status === "PREPARING").length;
+  const delayedCount = kitchenOrders.filter((o) => getWaitingMins(o.createdAt) >= 15).length;
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -136,179 +144,178 @@ export default function KitchenDisplayPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="ACTIVE KITCHEN TOKENS"
-          value={`${activeTokens} Tokens`}
+          value={isLoading ? "..." : `${activeTokens} Tokens`}
           subtext="in live queue"
-          trend={{ value: "↗ Live Queue", isPositive: true }}
+          trend={{ value: "Live Queue", isPositive: true }}
         />
         <StatCard
           label="ORDERS PREPARING"
-          value={`${preparingCount} Dishes`}
+          value={isLoading ? "..." : `${preparingCount} Orders`}
           subtext="on cooktop / tandoor"
-          trend={{ value: "↗ Cooking active", isPositive: true }}
+          trend={{ value: "Cooking active", isPositive: true }}
         />
         <StatCard
           label="LONG WAITING ORDERS"
-          value={`${delayedCount} Tokens`}
+          value={isLoading ? "..." : `${delayedCount} Tokens`}
           subtext="over 15 mins wait"
           trend={{ value: "Attention Required", isPositive: false }}
         />
       </div>
 
-      {/* Main Data Table Surface */}
-      <div className="design-surface p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
-            <Input
-              placeholder="Search token, order ID, or chef..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 h-9 bg-slate-50 border-slate-200/80 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-600/20"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors focus:outline-none cursor-pointer h-9"
-            >
-              <option value="all">All Kitchen Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="Preparing">Preparing</option>
-              <option value="Ready">Ready</option>
-              <option value="Served">Served</option>
-            </select>
-          </div>
+      {/* Loading Indicator */}
+      {isLoading && (
+        <div className="design-surface p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span className="text-xs font-medium">Loading live kitchen queue from database...</span>
         </div>
+      )}
 
-        {/* Data Table */}
-        <Table className="w-full">
-          <TableHeader>
-            <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TOKEN #</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ORDER & TABLE</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ITEMS LIST</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold hidden md:table-cell">SPECIAL INSTRUCTIONS</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold hidden lg:table-cell">ASSIGNED CHEF</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">KITCHEN STATUS</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">WAITING TIME</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody className="divide-y divide-slate-100 text-xs">
-            {filteredOrders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
-                  No active kitchen tokens found.
-                </TableCell>
+      {/* Main Data Table Surface */}
+      {!isLoading && (
+        <div className="design-surface p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
+              <Input
+                placeholder="Search token, order ID, or table..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 h-9 bg-slate-50 border-slate-200/80 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-600/20"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors focus:outline-none cursor-pointer h-9"
+              >
+                <option value="all">All Kitchen Statuses</option>
+                <option value="PENDING">Pending</option>
+                <option value="PREPARING">Preparing</option>
+                <option value="READY">Ready</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Data Table */}
+          <Table className="w-full">
+            <TableHeader>
+              <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TOKEN #</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">LOCATION / TYPE</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ITEMS LIST</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">KITCHEN STATUS</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">WAITING TIME</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
               </TableRow>
-            ) : (
-              filteredOrders.map((order) => {
-                const isDelayed = order.waitingMins >= 15;
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100 text-xs">
+              {filteredOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                    No active kitchen tokens in queue.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredOrders.map((order) => {
+                  const token = formatOrderId(order.id);
+                  const waitingMins = getWaitingMins(order.createdAt);
+                  const isDelayed = waitingMins >= 15;
 
-                return (
-                  <TableRow key={order.token} className="hover:bg-slate-50/80 transition-colors border-slate-100">
-                    <TableCell className="py-4 px-4 font-mono font-bold text-slate-900">
-                      {order.token}
-                    </TableCell>
-                    <TableCell className="py-4 px-4">
-                      <div className="font-semibold text-slate-800">{order.table}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{order.orderId}</div>
-                    </TableCell>
-                    <TableCell className="py-4 px-4 font-medium text-slate-900 max-w-[180px] truncate">
-                      {order.items}
-                    </TableCell>
-                    <TableCell className="py-4 px-4 text-rose-600 font-medium hidden md:table-cell max-w-[150px] truncate">
-                      {order.instructions || "None"}
-                    </TableCell>
-                    <TableCell className="py-4 px-4 text-slate-600 hidden lg:table-cell">
-                      {order.chef}
-                    </TableCell>
-                    <TableCell className="py-4 px-4">
-                      <StatusBadge status={order.status} />
-                    </TableCell>
-                    <TableCell className="py-4 px-4 font-mono font-bold">
-                      <span className={isDelayed ? "text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200" : "text-slate-700"}>
-                        {order.waitingMins} mins
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-4 px-4 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger className="h-8 w-8 text-slate-500 hover:text-slate-900 cursor-pointer flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
-                          <MoreVertical className="w-4 h-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase">
-                            Kitchen Actions
-                          </DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          {order.status === "Pending" && (
+                  return (
+                    <TableRow key={order.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
+                      <TableCell className="py-4 px-4 font-mono font-bold text-slate-900">
+                        {token}
+                      </TableCell>
+                      <TableCell className="py-4 px-4">
+                        <div className="font-semibold text-slate-800">
+                          {order.table?.tableNumber ? `Table ${order.table.tableNumber}` : order.orderType}
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-4 px-4 font-medium text-slate-900 max-w-[220px] truncate">
+                        {formatItemsList(order.items)}
+                      </TableCell>
+                      <TableCell className="py-4 px-4">
+                        <StatusBadge status={order.status} />
+                      </TableCell>
+                      <TableCell className="py-4 px-4 font-mono font-bold">
+                        <span className={isDelayed ? "text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200" : "text-slate-700"}>
+                          {waitingMins} mins
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-4 px-4 text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger className="h-8 w-8 text-slate-500 hover:text-slate-900 cursor-pointer flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
+                            <MoreVertical className="w-4 h-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase">
+                              Kitchen Actions
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {order.status === "PENDING" && (
+                              <DropdownMenuItem
+                                onClick={() => handleStatusUpdate(order.id, "PREPARING")}
+                                className="text-xs gap-2 text-blue-600 cursor-pointer font-semibold"
+                              >
+                                <Play className="w-3.5 h-3.5" />
+                                <span>Start Preparing</span>
+                              </DropdownMenuItem>
+                            )}
+                            {order.status === "PREPARING" && (
+                              <DropdownMenuItem
+                                onClick={() => handleStatusUpdate(order.id, "READY")}
+                                className="text-xs gap-2 text-emerald-600 cursor-pointer font-semibold"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Mark Ready</span>
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
-                              onClick={() => handleStatusUpdate(order.token, "Preparing")}
-                              className="text-xs gap-2 text-blue-600 cursor-pointer font-semibold"
+                              onClick={() => {
+                                setSelectedOrder(order);
+                                setIsDetailOpen(true);
+                              }}
+                              className="text-xs gap-2 text-slate-700 cursor-pointer"
                             >
-                              <Play className="w-3.5 h-3.5" />
-                              <span>Start Preparing</span>
+                              <Eye className="w-3.5 h-3.5 text-slate-500" />
+                              <span>View Order</span>
                             </DropdownMenuItem>
-                          )}
-                          {order.status === "Preparing" && (
-                            <DropdownMenuItem
-                              onClick={() => handleStatusUpdate(order.token, "Ready")}
-                              className="text-xs gap-2 text-emerald-600 cursor-pointer font-semibold"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Mark Ready</span>
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setSelectedOrder(order);
-                              setIsDetailOpen(true);
-                            }}
-                            className="text-xs gap-2 text-slate-700 cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-slate-500" />
-                            <span>View Order</span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
           </Table>
         </div>
+      )}
 
       {/* Kitchen Detail Modal */}
       {selectedOrder && isDetailOpen && (
         <Modal
           isOpen={isDetailOpen}
           onClose={() => setIsDetailOpen(false)}
-          title={`Kitchen Token — ${selectedOrder.token}`}
+          title={`Kitchen Token — ${formatOrderId(selectedOrder.id)}`}
         >
           <div className="space-y-4 py-2 text-xs">
             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
               <div>
-                <span className="text-slate-500 block">Location & Chef:</span>
-                <span className="font-semibold text-slate-900">{selectedOrder.table} ({selectedOrder.chef})</span>
+                <span className="text-slate-500 block">Location & Type:</span>
+                <span className="font-semibold text-slate-900">
+                  {selectedOrder.table?.tableNumber ? `Table ${selectedOrder.table.tableNumber}` : selectedOrder.orderType}
+                </span>
               </div>
               <StatusBadge status={selectedOrder.status} />
             </div>
 
             <div className="space-y-1">
               <span className="font-bold text-slate-700 uppercase block">Dishes to Prepare</span>
-              <div className="p-3 border border-slate-200 rounded-lg bg-white leading-relaxed text-slate-800 font-semibold">
-                {selectedOrder.items}
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <span className="font-bold text-rose-600 uppercase block">Special Instructions</span>
-              <div className="p-3 border border-rose-200 rounded-lg bg-rose-50 text-rose-700">
-                {selectedOrder.instructions || "No special instructions."}
+              <div className="p-3 border border-slate-200 rounded-lg bg-white leading-relaxed text-slate-800 font-mono">
+                {formatItemsList(selectedOrder.items)}
               </div>
             </div>
 
