@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -21,176 +21,107 @@ import {
   Eye,
   Printer,
   CreditCard,
-  CheckCircle,
-  Clock,
   ChevronLeft,
   ChevronRight,
-  User,
-  ShoppingBag,
-  FileText,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 import Link from "next/link";
-
-interface BillItem {
-  id: string;
-  billNumber: string;
-  customerName: string;
-  phoneNumber: string;
-  assignedStaff: string;
-  totalAmount: number;
-  subtotal: number;
-  gstAmount: number;
-  discount: number;
-  paymentStatus: "Paid" | "Unpaid" | "Pending";
-  paymentMode: string;
-  date: string;
-  itemsSummary: string;
-}
+import { toast } from "sonner";
+import { listOrders, createOrder } from "@/actions/orders";
+import { listMenuItems } from "@/actions/menu";
+import { listTables } from "@/actions/tables";
 
 export default function StaffBillingPage() {
-  // Staff Billing history dataset
-  const [bills, setBills] = useState<BillItem[]>([
-    {
-      id: "SB-1084",
-      billNumber: "#INV-1084",
-      customerName: "Sophie Martin",
-      phoneNumber: "+91 98765 11223",
-      assignedStaff: "Alex Rivera",
-      subtotal: 800.0,
-      gstAmount: 40.0,
-      discount: 0.0,
-      totalAmount: 840.0,
-      paymentStatus: "Paid",
-      paymentMode: "Card",
-      date: "Today, 12:45 PM",
-      itemsSummary: "1x Pan-Seared Atlantic Salmon, 1x Fresh Lime Soda",
-    },
-    {
-      id: "SB-1085",
-      billNumber: "#INV-1085",
-      customerName: "Thomas Wright",
-      phoneNumber: "+91 98123 44556",
-      assignedStaff: "Sarah Connor",
-      subtotal: 1450.0,
-      gstAmount: 72.5,
-      discount: 0.0,
-      totalAmount: 1522.5,
-      paymentStatus: "Paid",
-      paymentMode: "UPI / Online",
-      date: "Today, 01:15 PM",
-      itemsSummary: "1x Wagyu Ribeye Steak 300g, 2x Tiramisu",
-    },
-    {
-      id: "SB-1086",
-      billNumber: "#INV-1086",
-      customerName: "Hiro Tanaka",
-      phoneNumber: "+91 99887 22334",
-      assignedStaff: "Alex Rivera",
-      subtotal: 2300.0,
-      gstAmount: 115.0,
-      discount: 0.0,
-      totalAmount: 2415.0,
-      paymentStatus: "Unpaid",
-      paymentMode: "Cash",
-      date: "Today, 01:30 PM",
-      itemsSummary: "2x Tandoori Whole Pomfret, 4x Garlic Naan",
-    },
-    {
-      id: "SB-1087",
-      billNumber: "#INV-1087",
-      customerName: "Elena Rostova",
-      phoneNumber: "+91 97654 88990",
-      assignedStaff: "Liam Carter",
-      subtotal: 680.0,
-      gstAmount: 34.0,
-      discount: 0.0,
-      totalAmount: 714.0,
-      paymentStatus: "Paid",
-      paymentMode: "UPI / PhonePe",
-      date: "Today, 01:45 PM",
-      itemsSummary: "1x Burrata Salad, 1x Mineral Water",
-    },
-    {
-      id: "SB-1088",
-      billNumber: "#INV-1088",
-      customerName: "David Miller",
-      phoneNumber: "+91 98989 33445",
-      assignedStaff: "Alex Rivera",
-      subtotal: 1640.0,
-      gstAmount: 82.0,
-      discount: 0.0,
-      totalAmount: 1722.0,
-      paymentStatus: "Pending",
-      paymentMode: "Cash",
-      date: "Today, 02:00 PM",
-      itemsSummary: "2x Truffle Mushroom Risotto, 2x Cold Coffee",
-    },
-  ]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [tables, setTables] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
-  const [selectedPaymentMode, setSelectedPaymentMode] = useState("all");
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
-
-  // Selected bill for Invoice Modal
-  const [selectedBill, setSelectedBill] = useState<BillItem | null>(null);
+  // Selected order for Tax Invoice Modal
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
 
   // Create Bill Modal State
   const [isCreateBillOpen, setIsCreateBillOpen] = useState(false);
-  const [billCustomer, setBillCustomer] = useState("Liam Carter");
-  const [billPhone, setBillPhone] = useState("+91 98765 55443");
-  const [billStaff, setBillStaff] = useState("Alex Rivera");
-  const [selectedDish, setSelectedDish] = useState("Pan-Seared Atlantic Salmon");
-  const [dishPrice, setDishPrice] = useState("1250");
-  const [dishQty, setDishQty] = useState("2");
-  const [discountAmount, setDiscountAmount] = useState("0");
-  const [paymentMode, setPaymentMode] = useState("Credit Card");
-  const [initialPaymentStatus, setInitialPaymentStatus] = useState<"Paid" | "Unpaid">("Paid");
+  const [selectedTableId, setSelectedTableId] = useState("");
+  const [cartItems, setCartItems] = useState<Array<{ menuItemId: string; name: string; quantity: number; unitPrice: number }>>([]);
+  const [selectedMenuItemId, setSelectedMenuItemId] = useState("");
+  const [selectedQty, setSelectedQty] = useState(1);
 
-  // Dynamic live calculation for Create Bill form
-  const calculatedSubtotal = (parseFloat(dishPrice) || 0) * (parseInt(dishQty) || 1);
-  const calculatedGst = calculatedSubtotal * 0.05;
-  const calculatedGrandTotal = Math.max(0, calculatedSubtotal + calculatedGst - (parseFloat(discountAmount) || 0));
+  // Fetch orders, menu items, and tables
+  const loadBillingData = async () => {
+    try {
+      setIsLoading(true);
+      const [fetchedOrders, fetchedItems, fetchedTables] = await Promise.all([
+        listOrders(),
+        listMenuItems(),
+        listTables(),
+      ]);
 
-  // Filtered bills list
-  const filteredBills = useMemo(() => {
-    return bills.filter((b) => {
+      setOrders(fetchedOrders || []);
+      setMenuItems(fetchedItems || []);
+      setTables(fetchedTables || []);
+
+      if (fetchedTables && fetchedTables.length > 0 && !selectedTableId) {
+        setSelectedTableId(fetchedTables[0].id);
+      }
+      if (fetchedItems && fetchedItems.length > 0 && !selectedMenuItemId) {
+        setSelectedMenuItemId(fetchedItems[0].id);
+      }
+    } catch (err: any) {
+      console.error("Error loading billing data:", err);
+      toast.error(err.message || "Failed to load billing history");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBillingData();
+  }, []);
+
+  // Format Invoice ID
+  const formatInvoiceNumber = (id: string) => {
+    return `#INV-${id.slice(-4).toUpperCase()}`;
+  };
+
+  // Format Items Summary
+  const formatItemsSummary = (items: any) => {
+    if (typeof items === "string") return items;
+    if (Array.isArray(items)) {
+      return items.map((i) => `${i.quantity}x ${i.name}`).join(", ");
+    }
+    return "Ordered Items";
+  };
+
+  // Filtered Bills
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const invNo = formatInvoiceNumber(o.id);
       const matchesSearch =
-        b.billNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.assignedStaff.toLowerCase().includes(searchQuery.toLowerCase());
+        invNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (o.table?.tableNumber && o.table.tableNumber.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesStatus =
-        selectedStatus === "all" || b.paymentStatus === selectedStatus;
-      const matchesMode =
-        selectedPaymentMode === "all" ||
-        b.paymentMode.toLowerCase().includes(selectedPaymentMode.toLowerCase());
+        selectedStatus === "all" || o.paymentStatus === selectedStatus;
 
-      return matchesSearch && matchesStatus && matchesMode;
+      return matchesSearch && matchesStatus;
     });
-  }, [bills, searchQuery, selectedStatus, selectedPaymentMode]);
+  }, [orders, searchQuery, selectedStatus]);
 
-  // Paginated bills
-  const paginatedBills = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredBills.slice(start, start + itemsPerPage);
-  }, [filteredBills, currentPage]);
-
-  const totalPages = Math.ceil(filteredBills.length / itemsPerPage) || 1;
-
-  // Payment Summary Stat Calculations
+  // Billing Stat Calculations
   const stats = useMemo(() => {
-    const totalCount = bills.length;
-    const paidBills = bills.filter((b) => b.paymentStatus === "Paid");
-    const totalRev = paidBills.reduce((acc, curr) => acc + curr.totalAmount, 0);
-    const unpaidCount = bills.filter((b) => b.paymentStatus !== "Paid").length;
-    const avgTicket = totalCount > 0 ? bills.reduce((acc, b) => acc + b.totalAmount, 0) / totalCount : 0;
+    const totalCount = orders.length;
+    const paidOrders = orders.filter((o) => o.paymentStatus === "PAID");
+    const totalRev = paidOrders.reduce((acc, curr) => acc + (curr.total || 0), 0);
+    const unpaidCount = orders.filter((o) => o.paymentStatus !== "PAID").length;
+    const avgTicket = totalCount > 0 ? orders.reduce((acc, b) => acc + (b.total || 0), 0) / totalCount : 0;
 
     return {
       totalBills: totalCount,
@@ -198,28 +129,72 @@ export default function StaffBillingPage() {
       unpaidBills: unpaidCount,
       avgTicketSize: `₹${avgTicket.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
     };
-  }, [bills]);
+  }, [orders]);
 
-  const handleCreateBillSubmit = (e: React.FormEvent) => {
+  // Handle Razorpay Payment Creation (/api/payments/create-order)
+  const handleInitiateRazorpay = async (orderId: string) => {
+    setIsProcessingPayment(true);
+    try {
+      const res = await fetch("/api/payments/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Payment order creation failed");
+
+      toast.success(`Razorpay Order Created: ${data.razorpayOrderId}`);
+      alert(`Razorpay Gateway Checkout Simulated!\nRazorpay Order ID: ${data.razorpayOrderId}\nAmount: ₹${(data.amount / 100).toFixed(2)}`);
+      await loadBillingData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to process payment");
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  // Add Item to Quick Bill Cart
+  const handleAddToCart = () => {
+    const item = menuItems.find((m) => m.id === selectedMenuItemId);
+    if (!item) return;
+
+    setCartItems((prev) => {
+      const existing = prev.find((i) => i.menuItemId === item.id);
+      if (existing) {
+        return prev.map((i) => (i.menuItemId === item.id ? { ...i, quantity: i.quantity + selectedQty } : i));
+      }
+      return [...prev, { menuItemId: item.id, name: item.name, quantity: selectedQty, unitPrice: item.price }];
+    });
+
+    toast.success(`Added ${selectedQty}x ${item.name}`);
+  };
+
+  // Submit Create Quick Bill
+  const handleCreateBillSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newBill: BillItem = {
-      id: `SB-${Date.now().toString().slice(-4)}`,
-      billNumber: `#INV-${Math.floor(1000 + Math.random() * 9000)}`,
-      customerName: billCustomer,
-      phoneNumber: billPhone,
-      assignedStaff: billStaff,
-      subtotal: calculatedSubtotal,
-      gstAmount: calculatedGst,
-      discount: parseFloat(discountAmount) || 0,
-      totalAmount: calculatedGrandTotal,
-      paymentStatus: initialPaymentStatus,
-      paymentMode,
-      date: "Just now",
-      itemsSummary: `${dishQty}x ${selectedDish}`,
-    };
+    if (cartItems.length === 0) {
+      toast.error("Please add at least one dish to the bill");
+      return;
+    }
 
-    setBills((prev) => [newBill, ...prev]);
-    setIsCreateBillOpen(false);
+    setIsSubmitting(true);
+    try {
+      await createOrder({
+        orderType: selectedTableId ? "DINE_IN" : "TAKEAWAY",
+        tableId: selectedTableId || undefined,
+        items: cartItems,
+      });
+
+      toast.success("Bill generated successfully");
+      setIsCreateBillOpen(false);
+      setCartItems([]);
+      await loadBillingData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate bill");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -238,238 +213,182 @@ export default function StaffBillingPage() {
           </p>
         </div>
 
-        <Link
-          href="/staff/billing/create"
-          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer border-none"
+        <Button
+          onClick={() => setIsCreateBillOpen(true)}
+          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md border-none cursor-pointer self-start md:self-auto"
         >
           <Receipt className="w-4 h-4" />
-          <span>Create New Bill</span>
-        </Link>
+          <span>Quick Create Bill</span>
+        </Button>
       </div>
 
       {/* Payment Summary Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
           label="SHIFT TOTAL BILLS"
-          value={`${stats.totalBills} Invoices`}
+          value={isLoading ? "..." : `${stats.totalBills} Invoices`}
           subtext="generated by staff"
         />
         <StatCard
           label="SHIFT REVENUE PAID"
-          value={stats.totalRevenue}
+          value={isLoading ? "..." : stats.totalRevenue}
           subtext="cleared transactions"
         />
         <StatCard
           label="UNPAID / PENDING"
-          value={`${stats.unpaidBills} Bills`}
+          value={isLoading ? "..." : `${stats.unpaidBills} Bills`}
           subtext="open customer tabs"
         />
         <StatCard
           label="AVERAGE TICKET SIZE"
-          value={stats.avgTicketSize}
+          value={isLoading ? "..." : stats.avgTicketSize}
           subtext="per dining table"
         />
       </div>
 
-      {/* Main Billing History Table Surface */}
-      <div className="design-surface p-6 space-y-6">
-        {/* Header & Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
-            <Input
-              placeholder="Search by invoice #, customer or staff..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full pl-9 pr-4 py-2 h-9 bg-slate-50 border-slate-200 rounded-xl text-xs text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-600/20"
-            />
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <select
-              value={selectedStatus}
-              onChange={(e) => {
-                setSelectedStatus(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none cursor-pointer h-9"
-            >
-              <option value="all">All Payment Statuses</option>
-              <option value="Paid">Paid</option>
-              <option value="Unpaid">Unpaid</option>
-              <option value="Pending">Pending</option>
-            </select>
-
-            <select
-              value={selectedPaymentMode}
-              onChange={(e) => {
-                setSelectedPaymentMode(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none cursor-pointer h-9"
-            >
-              <option value="all">All Payment Modes</option>
-              <option value="Card">Credit/Debit Card</option>
-              <option value="Cash">Cash</option>
-              <option value="UPI">UPI / PhonePe / Paytm</option>
-            </select>
-          </div>
+      {/* Loading Indicator */}
+      {isLoading && (
+        <div className="design-surface p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span className="text-xs font-medium">Loading live billing records from database...</span>
         </div>
+      )}
 
-        {/* Current & Completed Bills Data Table */}
-        <Table className="w-full">
-          <TableHeader>
-            <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">INVOICE NO.</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">CUSTOMER NAME</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STAFF / CASHIER</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DATE & TIME</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">TOTAL (₹)</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">PAYMENT MODE</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STATUS</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody className="divide-y divide-slate-100 text-xs">
-            {paginatedBills.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
-                  No invoices found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginatedBills.map((bill) => (
-                <TableRow key={bill.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
-                  <TableCell className="py-4 px-4 font-mono font-bold text-slate-900">
-                    {bill.billNumber}
-                  </TableCell>
-                  <TableCell className="py-4 px-4 font-semibold text-slate-800">
-                    <div>{bill.customerName}</div>
-                    <div className="text-[10px] text-slate-400 font-mono">{bill.phoneNumber}</div>
-                  </TableCell>
-                  <TableCell className="py-4 px-4 text-slate-600 font-medium">
-                    {bill.assignedStaff}
-                  </TableCell>
-                  <TableCell className="py-4 px-4 font-mono text-slate-500">
-                    {bill.date}
-                  </TableCell>
-                  <TableCell className="py-4 px-4 text-right font-mono font-bold text-slate-900">
-                    ₹{bill.totalAmount.toFixed(2)}
-                  </TableCell>
-                  <TableCell className="py-4 px-4 text-slate-700 font-medium">
-                    {bill.paymentMode}
-                  </TableCell>
-                  <TableCell className="py-4 px-4">
-                    <StatusBadge status={bill.paymentStatus} />
-                  </TableCell>
-                  <TableCell className="py-4 px-4 text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => {
-                        setSelectedBill(bill);
-                        setIsInvoiceOpen(true);
-                      }}
-                      className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-100/80 rounded-lg cursor-pointer transition-colors"
-                      title="View Tax Invoice"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      {/* Main Billing History Table Surface */}
+      {!isLoading && (
+        <div className="design-surface p-6 space-y-6">
+          {/* Header & Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
+              <Input
+                placeholder="Search by invoice # or table..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 h-9 bg-slate-50 border-slate-200 rounded-xl text-xs text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-600/20"
+              />
+            </div>
 
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-            <span className="text-xs text-slate-500">
-              Page {currentPage} of {totalPages} ({filteredBills.length} total bills)
-            </span>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="h-8 px-3 text-xs cursor-pointer"
+            <div className="flex items-center gap-3 flex-wrap">
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none cursor-pointer h-9"
               >
-                <ChevronLeft className="w-4 h-4 mr-1" /> Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="h-8 px-3 text-xs cursor-pointer"
-              >
-                Next <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
+                <option value="all">All Payment Statuses</option>
+                <option value="PAID">Paid</option>
+                <option value="PENDING">Pending</option>
+                <option value="FAILED">Failed</option>
+              </select>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Modal: View Tax Invoice & Receipt Preview */}
-      {selectedBill && isInvoiceOpen && (
+          {/* Current & Completed Bills Data Table */}
+          <Table className="w-full">
+            <TableHeader>
+              <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">INVOICE NO.</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TYPE & TABLE</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ITEMS SUMMARY</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DATE & TIME</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">TOTAL (₹)</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">PAYMENT STATUS</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100 text-xs">
+              {filteredOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400 text-xs">
+                    No billing records found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredOrders.map((order) => {
+                  const invNo = formatInvoiceNumber(order.id);
+                  const time = new Date(order.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+
+                  return (
+                    <TableRow key={order.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
+                      <TableCell className="py-4 px-4 font-mono font-bold text-slate-900">
+                        {invNo}
+                      </TableCell>
+                      <TableCell className="py-4 px-4 font-semibold text-slate-800">
+                        <div>{order.orderType}</div>
+                        <div className="text-[10px] text-blue-600 font-mono">
+                          {order.table?.tableNumber ? `Table ${order.table.tableNumber}` : "Counter"}
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-4 px-4 text-slate-600 max-w-[220px] truncate">
+                        {formatItemsSummary(order.items)}
+                      </TableCell>
+                      <TableCell className="py-4 px-4 font-mono text-slate-500">
+                        {time}
+                      </TableCell>
+                      <TableCell className="py-4 px-4 text-right font-mono font-bold text-slate-900">
+                        ₹{order.total.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="py-4 px-4">
+                        <StatusBadge status={order.paymentStatus} />
+                      </TableCell>
+                      <TableCell className="py-4 px-4 text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            setIsInvoiceOpen(true);
+                          }}
+                          className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-100/80 rounded-lg cursor-pointer transition-colors"
+                          title="View Tax Invoice"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Modal: View Tax Invoice & Payment Trigger */}
+      {selectedOrder && isInvoiceOpen && (
         <Modal
           isOpen={isInvoiceOpen}
           onClose={() => setIsInvoiceOpen(false)}
-          title={`Tax Invoice — ${selectedBill.billNumber}`}
+          title={`Tax Invoice — ${formatInvoiceNumber(selectedOrder.id)}`}
         >
           <div className="space-y-4 py-2 text-xs font-mono">
             <div className="text-center pb-3 border-b border-dashed border-slate-300 font-sans">
               <h3 className="font-bold text-base text-slate-900">GRAND BISTRO RESTAURANT</h3>
               <p className="text-xs text-slate-500 mt-0.5">GSTIN: 07AAAAA0000A1Z5 • Staff POS Station</p>
-              <p className="text-[10px] text-slate-400 mt-1">Invoice: {selectedBill.billNumber} | Date: {selectedBill.date}</p>
-            </div>
-
-            <div className="space-y-1 text-slate-800">
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-sans">Customer Name:</span>
-                <span className="font-bold font-sans">{selectedBill.customerName} ({selectedBill.phoneNumber})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-sans">Server / Cashier:</span>
-                <span className="font-sans">{selectedBill.assignedStaff}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-sans">Payment Method:</span>
-                <span className="font-sans font-semibold text-blue-600">{selectedBill.paymentMode}</span>
-              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Invoice: {formatInvoiceNumber(selectedOrder.id)} | Order Type: {selectedOrder.orderType}
+              </p>
             </div>
 
             <div className="py-3 border-t border-b border-dashed border-slate-300 space-y-2">
               <div className="font-bold font-sans text-slate-700 uppercase text-[10px]">Ordered Items Summary</div>
               <div className="p-3 bg-slate-50 rounded-lg text-slate-900 font-sans font-medium">
-                {selectedBill.itemsSummary}
+                {formatItemsSummary(selectedOrder.items)}
               </div>
             </div>
 
             <div className="space-y-1.5 pt-1">
               <div className="flex justify-between text-slate-600">
                 <span>Subtotal:</span>
-                <span>₹{selectedBill.subtotal.toFixed(2)}</span>
+                <span>₹{selectedOrder.subtotal?.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>GST (5%):</span>
-                <span>₹{selectedBill.gstAmount.toFixed(2)}</span>
+                <span>₹{selectedOrder.tax?.toFixed(2)}</span>
               </div>
-              {selectedBill.discount > 0 && (
-                <div className="flex justify-between text-emerald-600">
-                  <span>Discount:</span>
-                  <span>-₹{selectedBill.discount.toFixed(2)}</span>
-                </div>
-              )}
               <div className="flex justify-between font-bold text-sm text-slate-900 pt-2 border-t border-dashed border-slate-300 font-sans">
                 <span>GRAND TOTAL:</span>
-                <span className="text-blue-600">₹{selectedBill.totalAmount.toFixed(2)}</span>
+                <span className="text-blue-600">₹{selectedOrder.total?.toFixed(2)}</span>
               </div>
             </div>
 
@@ -477,175 +396,110 @@ export default function StaffBillingPage() {
               <Button variant="outline" size="sm" onClick={() => setIsInvoiceOpen(false)}>
                 Close
               </Button>
+              {selectedOrder.paymentStatus !== "PAID" && (
+                <Button
+                  size="sm"
+                  disabled={isProcessingPayment}
+                  onClick={() => handleInitiateRazorpay(selectedOrder.id)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                >
+                  {isProcessingPayment ? (
+                    <span className="flex items-center gap-1">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing...
+                    </span>
+                  ) : (
+                    <>
+                      <CreditCard className="w-3.5 h-3.5 mr-1" /> Pay via Razorpay
+                    </>
+                  )}
+                </Button>
+              )}
               <Button
                 size="sm"
                 onClick={() => {
-                  alert(`Tax receipt for ${selectedBill.billNumber} sent to thermal POS printer!`);
+                  alert(`Tax receipt for ${formatInvoiceNumber(selectedOrder.id)} printed!`);
                   setIsInvoiceOpen(false);
                 }}
-                className="bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
               >
-                <Printer className="w-3.5 h-3.5 mr-1" />
-                Print Tax Receipt
+                <Printer className="w-3.5 h-3.5 mr-1" /> Print Receipt
               </Button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Modal: Create Bill (POS Billing) */}
+      {/* Modal: Quick Create Bill */}
       <Modal
         isOpen={isCreateBillOpen}
         onClose={() => setIsCreateBillOpen(false)}
         title="Create New Customer Bill (POS)"
-        subtitle="Generate instant customer invoice with GST & thermal receipt."
+        subtitle="Select table & dishes to generate instant tax bill."
       >
         <form onSubmit={handleCreateBillSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Customer Name
-              </label>
-              <Input
-                type="text"
-                required
-                value={billCustomer}
-                onChange={(e) => setBillCustomer(e.target.value)}
-                placeholder="e.g. Liam Carter"
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Phone Number
-              </label>
-              <Input
-                type="text"
-                required
-                value={billPhone}
-                onChange={(e) => setBillPhone(e.target.value)}
-                placeholder="+91 98765 43210"
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Table Selection (Optional for Takeaway)
+            </label>
+            <select
+              value={selectedTableId}
+              onChange={(e) => setSelectedTableId(e.target.value)}
+              className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
+            >
+              <option value="">Counter / Takeaway Order</option>
+              {tables.map((t) => (
+                <option key={t.id} value={t.id}>
+                  Table {t.tableNumber} ({t.capacity} seats - {t.status})
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Assigned Staff / Cashier
-              </label>
-              <Input
-                type="text"
-                required
-                value={billStaff}
-                onChange={(e) => setBillStaff(e.target.value)}
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Selected Dish
-              </label>
-              <select
-                value={selectedDish}
-                onChange={(e) => setSelectedDish(e.target.value)}
-                className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
-              >
-                <option value="Pan-Seared Atlantic Salmon">Pan-Seared Atlantic Salmon (₹1,250)</option>
-                <option value="Burrata di Puglia Salad">Burrata di Puglia Salad (₹680)</option>
-                <option value="Wagyu Ribeye Steak 300g">Wagyu Ribeye Steak 300g (₹2,450)</option>
-                <option value="Tandoori Whole Pomfret">Tandoori Whole Pomfret (₹950)</option>
-                <option value="Truffle Mushroom Risotto">Truffle Mushroom Risotto (₹820)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Unit Price (₹)
-              </label>
-              <Input
-                type="number"
-                required
-                value={dishPrice}
-                onChange={(e) => setDishPrice(e.target.value)}
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
-              />
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+            <div className="text-xs font-semibold text-slate-800">Add Item to Bill</div>
+            <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-7">
+                <select
+                  value={selectedMenuItemId}
+                  onChange={(e) => setSelectedMenuItemId(e.target.value)}
+                  className="w-full px-3 py-2 h-9 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none"
+                >
+                  {menuItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} — ₹{item.price.toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-3">
+                <Input
+                  type="number"
+                  min="1"
+                  value={selectedQty}
+                  onChange={(e) => setSelectedQty(parseInt(e.target.value, 10) || 1)}
+                  className="w-full h-9 text-xs rounded-lg font-mono"
+                />
+              </div>
+              <div className="col-span-2">
+                <Button
+                  type="button"
+                  onClick={handleAddToCart}
+                  className="w-full h-9 text-xs bg-blue-600 text-white rounded-lg p-0"
+                >
+                  Add
+                </Button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Quantity
-              </label>
-              <Input
-                type="number"
-                required
-                value={dishQty}
-                onChange={(e) => setDishQty(e.target.value)}
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Discount (₹)
-              </label>
-              <Input
-                type="number"
-                value={discountAmount}
-                onChange={(e) => setDiscountAmount(e.target.value)}
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Payment Mode
-              </label>
-              <select
-                value={paymentMode}
-                onChange={(e) => setPaymentMode(e.target.value)}
-                className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
-              >
-                <option value="Credit Card">Credit Card</option>
-                <option value="Cash">Cash</option>
-                <option value="UPI / PhonePe">UPI / PhonePe</option>
-                <option value="Net Banking">Net Banking</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Payment Status
-              </label>
-              <select
-                value={initialPaymentStatus}
-                onChange={(e) => setInitialPaymentStatus(e.target.value as "Paid" | "Unpaid")}
-                className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
-              >
-                <option value="Paid">Paid</option>
-                <option value="Unpaid">Unpaid / Credit</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Live Billing Calculation Breakdown */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
-            <div className="flex justify-between text-slate-600">
-              <span>Subtotal:</span>
-              <span className="font-mono font-semibold text-slate-900">₹{calculatedSubtotal.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-slate-600">
-              <span>GST (5%):</span>
-              <span className="font-mono font-semibold text-slate-900">₹{calculatedGst.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-sm text-slate-900 pt-1.5 border-t border-slate-200">
-              <span>Grand Total:</span>
-              <span className="font-mono text-blue-600 text-base">₹{calculatedGrandTotal.toFixed(2)}</span>
+            {/* Cart Preview */}
+            <div className="space-y-1.5 pt-2">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Selected Items ({cartItems.length})</div>
+              {cartItems.map((item, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white rounded border border-slate-200">
+                  <span className="font-medium text-slate-800">{item.quantity}x {item.name}</span>
+                  <span className="font-mono font-bold text-slate-900">₹{(item.quantity * item.unitPrice).toFixed(2)}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -660,9 +514,10 @@ export default function StaffBillingPage() {
             </Button>
             <Button
               type="submit"
-              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none"
+              disabled={isSubmitting || cartItems.length === 0}
+              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none cursor-pointer"
             >
-              Generate Bill
+              {isSubmitting ? "Generating..." : "Generate Bill"}
             </Button>
           </div>
         </form>

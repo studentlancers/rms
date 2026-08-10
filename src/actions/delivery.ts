@@ -114,18 +114,25 @@ export async function updateDeliveryStatus(
  * Returns all active (non-delivered) deliveries for the active restaurant.
  */
 export async function listActiveDeliveries() {
-  await requireRole(["owner", "admin", "staff"]);
-  const ctx = await getRestaurantContext();
-  const restaurantId = ctx.isSuperAdmin
-    ? (() => { throw new Error("Super Admin must select a restaurant"); })()
-    : ctx.restaurantId;
+  try {
+    await requireRole(["owner", "admin", "staff"]);
+    const ctx = await getRestaurantContext();
+    const restaurantId = ctx.isSuperAdmin
+      ? null
+      : ctx.restaurantId;
 
-  return db.delivery.findMany({
-    where: {
-      restaurantId,
-      status: { not: "DELIVERED" },
-    },
-    orderBy: { createdAt: "asc" },
-    include: { order: true },
-  });
+    if (!restaurantId) return [];
+
+    return await db.delivery.findMany({
+      where: {
+        restaurantId,
+        status: { not: "DELIVERED" },
+      },
+      orderBy: { createdAt: "asc" },
+      include: { order: true },
+    });
+  } catch (error) {
+    console.error("Error in listActiveDeliveries action:", error);
+    return [];
+  }
 }

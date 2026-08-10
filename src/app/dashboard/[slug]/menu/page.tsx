@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatCard } from "@/components/ui/stat-card";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableHeader,
@@ -26,215 +25,130 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  Filter,
+  Loader2,
+  FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import {
+  listCategories,
+  listMenuItems,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  createMenuItem,
+  updateMenuItem,
+  toggleMenuItemAvailability,
+  deleteMenuItem,
+} from "@/actions/menu";
 
-interface MenuItem {
+interface CategoryData {
   id: string;
   name: string;
-  category: string;
-  price: number;
-  gstPercent: number;
-  description: string;
-  available: boolean;
-  isTodaySpecial?: boolean;
+  sortOrder: number;
+  menuItems?: any[];
 }
 
-interface CatalogItem {
+interface MenuItemData {
+  id: string;
+  categoryId: string;
+  category?: CategoryData;
   name: string;
-  halfPrice: number | null;
-  fullPrice: number;
-  available?: boolean;
-}
-
-interface CatalogSection {
-  category: string;
-  items: CatalogItem[];
+  price: number;
+  description: string | null;
+  isVeg: boolean;
+  isAvailable: boolean;
+  variants?: any;
 }
 
 export default function MenuModulePage() {
   const [activeTab, setActiveTab] = useState<"menu" | "catalog">("menu");
 
-  // Initial Catalog Data
-  const initialCatalogSections: CatalogSection[] = [
-    {
-      category: "Veg Starters",
-      items: [
-        { name: "Paneer Tikka", halfPrice: 180, fullPrice: 320, available: true },
-        { name: "Hara Bhara Kebab", halfPrice: 150, fullPrice: 270, available: true },
-        { name: "Crispy Corn Chili Pepper", halfPrice: 160, fullPrice: 280, available: true },
-        { name: "Mushroom Multani", halfPrice: 190, fullPrice: 340, available: true },
-      ],
-    },
-    {
-      category: "Non-Veg Starters",
-      items: [
-        { name: "Chicken Tikka", halfPrice: 220, fullPrice: 390, available: true },
-        { name: "Tandoori Chicken", halfPrice: 240, fullPrice: 440, available: true },
-        { name: "Fish Amritsari", halfPrice: 280, fullPrice: 490, available: true },
-        { name: "Mutton Seekh Kebab", halfPrice: 310, fullPrice: 550, available: true },
-      ],
-    },
-    {
-      category: "Soups",
-      items: [
-        { name: "Tomato Basil Soup", halfPrice: 90, fullPrice: 150, available: true },
-        { name: "Sweet Corn Chicken Soup", halfPrice: 110, fullPrice: 180, available: true },
-        { name: "Hot & Sour Veg Soup", halfPrice: 100, fullPrice: 160, available: true },
-        { name: "Manchow Soup (Veg / Non-Veg)", halfPrice: 110, fullPrice: 190, available: true },
-      ],
-    },
-    {
-      category: "Main Course",
-      items: [
-        { name: "Dal Makhani", halfPrice: 170, fullPrice: 290, available: true },
-        { name: "Paneer Butter Masala", halfPrice: 200, fullPrice: 360, available: true },
-        { name: "Butter Chicken", halfPrice: 250, fullPrice: 450, available: true },
-        { name: "Mutton Rogan Josh", halfPrice: 310, fullPrice: 560, available: true },
-        { name: "Kadhai Paneer", halfPrice: 190, fullPrice: 340, available: true },
-      ],
-    },
-    {
-      category: "Biryani",
-      items: [
-        { name: "Veg Dum Biryani", halfPrice: 180, fullPrice: 310, available: true },
-        { name: "Hyderabadi Chicken Biryani", halfPrice: 230, fullPrice: 410, available: true },
-        { name: "Special Mutton Biryani", halfPrice: 290, fullPrice: 520, available: true },
-        { name: "Egg Biryani", halfPrice: 160, fullPrice: 280, available: true },
-      ],
-    },
-    {
-      category: "Chinese",
-      items: [
-        { name: "Veg Hakka Noodles", halfPrice: 140, fullPrice: 240, available: true },
-        { name: "Chili Chicken Dry / Gravy", halfPrice: 210, fullPrice: 370, available: true },
-        { name: "Veg Fried Rice", halfPrice: 130, fullPrice: 230, available: true },
-        { name: "Chicken Schezwan Fried Rice", halfPrice: 170, fullPrice: 300, available: true },
-      ],
-    },
-    {
-      category: "Desserts & Beverages",
-      items: [
-        { name: "Gulab Jamun (2 pcs)", halfPrice: null, fullPrice: 120, available: true },
-        { name: "Rasmalai (2 pcs)", halfPrice: null, fullPrice: 150, available: true },
-        { name: "Fresh Lime Soda", halfPrice: null, fullPrice: 110, available: true },
-        { name: "Cold Coffee with Ice Cream", halfPrice: null, fullPrice: 160, available: true },
-      ],
-    },
-  ];
+  // Dynamic Data States
+  const [categories, setCategories] = useState<CategoryData[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [catalogSections, setCatalogSections] = useState<CatalogSection[]>(initialCatalogSections);
-
-  // Menu items state
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([
-    {
-      id: "M-1",
-      name: "Pan-Seared Atlantic Salmon",
-      category: "Mains",
-      price: 1250.0,
-      gstPercent: 5,
-      description: "Crispy skin salmon with crushed heirloom potatoes & dill emulsion.",
-      available: true,
-      isTodaySpecial: true,
-    },
-    {
-      id: "M-2",
-      name: "Burrata di Puglia Salad",
-      category: "Starters",
-      price: 680.0,
-      gstPercent: 5,
-      description: "Fresh Puglia burrata, vine tomatoes, basil oil & balsamic reduction.",
-      available: true,
-      isTodaySpecial: false,
-    },
-    {
-      id: "M-3",
-      name: "Wagyu Ribeye Steak 300g",
-      category: "Mains",
-      price: 2450.0,
-      gstPercent: 5,
-      description: "Charcoal grilled MB5+ ribeye with red wine jus & truffle fries.",
-      available: true,
-      isTodaySpecial: true,
-    },
-    {
-      id: "M-4",
-      name: "Tiramisu Tradizionale",
-      category: "Desserts",
-      price: 450.0,
-      gstPercent: 5,
-      description: "Espresso soaked savoiardi, mascarpone cream & cocoa powder.",
-      available: false,
-      isTodaySpecial: false,
-    },
-    {
-      id: "M-5",
-      name: "Tandoori Whole Pomfret",
-      category: "Starters",
-      price: 950.0,
-      gstPercent: 5,
-      description: "Fresh ocean pomfret marinated in coastal spices & chargrilled.",
-      available: true,
-      isTodaySpecial: true,
-    },
-    {
-      id: "M-6",
-      name: "Truffle Mushroom Risotto",
-      category: "Mains",
-      price: 820.0,
-      gstPercent: 5,
-      description: "Arborio rice, wild porcini mushrooms, black truffle butter & parmesan.",
-      available: true,
-      isTodaySpecial: false,
-    },
-  ]);
-
-  // Search, Category, and Availability Filters
+  // Search & Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedAvailability, setSelectedAvailability] = useState("all");
 
-  // Pagination state
+  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 4;
+  const itemsPerPage = 6;
 
   // Add/Edit Menu Item Modal State
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
-  const [editingMenuItem, setEditingMenuItem] = useState<MenuItem | null>(null);
+  const [editingMenuItem, setEditingMenuItem] = useState<MenuItemData | null>(null);
 
-  // Form states for Menu Item
+  // Form States for Menu Item
   const [menuName, setMenuName] = useState("");
-  const [menuCategory, setMenuCategory] = useState("Mains");
-  const [menuPrice, setMenuPrice] = useState("450.00");
+  const [menuCategory, setMenuCategory] = useState("");
+  const [menuPrice, setMenuPrice] = useState("");
   const [menuGst, setMenuGst] = useState("5");
   const [menuDesc, setMenuDesc] = useState("");
+  const [menuIsVeg, setMenuIsVeg] = useState(false);
   const [menuAvailable, setMenuAvailable] = useState(true);
   const [menuIsSpecial, setMenuIsSpecial] = useState(false);
 
-  // Edit Catalog Item Modal State
-  const [isEditCatalogOpen, setIsEditCatalogOpen] = useState(false);
-  const [catalogOriginalCategory, setCatalogOriginalCategory] = useState("");
-  const [catalogOriginalName, setCatalogOriginalName] = useState("");
-  const [catalogDishName, setCatalogDishName] = useState("");
-  const [catalogCategory, setCatalogCategory] = useState("Veg Starters");
-  const [catalogHalfPrice, setCatalogHalfPrice] = useState("");
-  const [catalogFullPrice, setCatalogFullPrice] = useState("");
-  const [catalogAvailable, setCatalogAvailable] = useState(true);
+  // Category Modal State
+  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<CategoryData | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategorySort, setNewCategorySort] = useState("0");
+
+  // Fetch data from backend
+  const loadMenuData = async () => {
+    try {
+      setIsLoading(true);
+      const [cats, items] = await Promise.all([
+        listCategories(),
+        listMenuItems(),
+      ]);
+      setCategories(cats || []);
+      setMenuItems(items || []);
+      if (cats && cats.length > 0 && !menuCategory) {
+        setMenuCategory(cats[0].id);
+      }
+    } catch (err: any) {
+      console.error("Error loading menu data:", err);
+      toast.error(err.message || "Failed to load menu data from server");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMenuData();
+  }, []);
+
+  // Helper to check if an item is special
+  const isItemSpecial = (item: MenuItemData) => {
+    if (!item.variants) return false;
+    if (Array.isArray(item.variants)) {
+      return item.variants.some((v: any) => v.name === "special" || v.isSpecial);
+    }
+    return false;
+  };
 
   // Filtered Menu Items
   const filteredMenuItems = useMemo(() => {
     return menuItems.filter((item) => {
       const matchesSearch =
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.description.toLowerCase().includes(searchQuery.toLowerCase());
+        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      
       const matchesCategory =
-        selectedCategory === "all" || item.category.toLowerCase() === selectedCategory.toLowerCase();
+        selectedCategory === "all" || item.categoryId === selectedCategory;
+      
+      const isSpecial = isItemSpecial(item);
       const matchesAvailability =
         selectedAvailability === "all" ||
-        (selectedAvailability === "available" && item.available) ||
-        (selectedAvailability === "unavailable" && !item.available) ||
-        (selectedAvailability === "specials" && item.isTodaySpecial);
+        (selectedAvailability === "available" && item.isAvailable) ||
+        (selectedAvailability === "unavailable" && !item.isAvailable) ||
+        (selectedAvailability === "specials" && isSpecial);
 
       return matchesSearch && matchesCategory && matchesAvailability;
     });
@@ -248,144 +162,184 @@ export default function MenuModulePage() {
 
   const totalPages = Math.ceil(filteredMenuItems.length / itemsPerPage) || 1;
 
-  // Toggle availability handler
-  const handleToggleAvailability = (id: string) => {
+  // Toggle Availability Handler
+  const handleToggleAvailability = async (id: string, currentAvailable: boolean) => {
+    // Optimistic Update
     setMenuItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, available: !item.available } : item))
+      prev.map((item) => (item.id === id ? { ...item, isAvailable: !currentAvailable } : item))
     );
+
+    try {
+      await toggleMenuItemAvailability(id, !currentAvailable);
+      toast.success(
+        !currentAvailable ? "Item marked as Available" : "Item marked as Sold Out (86'd)"
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update availability");
+      await loadMenuData(); // revert
+    }
   };
 
-  // Toggle Today's Special handler
-  const handleToggleSpecial = (id: string) => {
-    setMenuItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, isTodaySpecial: !item.isTodaySpecial } : item
-      )
-    );
+  // Toggle Today's Special Handler
+  const handleToggleSpecial = async (item: MenuItemData) => {
+    const currentlySpecial = isItemSpecial(item);
+    const updatedVariants = !currentlySpecial
+      ? [{ name: "special", priceModifier: 0 }]
+      : [];
+
+    try {
+      await updateMenuItem(item.id, { variants: updatedVariants });
+      toast.success(!currentlySpecial ? "Marked as Today's Special" : "Removed from Today's Specials");
+      await loadMenuData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update special status");
+    }
   };
 
-  // Open Edit Menu Modal
-  const openEditMenu = (item: MenuItem) => {
+  // Open Edit Menu Item Modal
+  const openEditMenu = (item: MenuItemData) => {
     setEditingMenuItem(item);
     setMenuName(item.name);
-    setMenuCategory(item.category);
+    setMenuCategory(item.categoryId);
     setMenuPrice(item.price.toString());
-    setMenuGst(item.gstPercent.toString());
-    setMenuDesc(item.description);
-    setMenuAvailable(item.available);
-    setMenuIsSpecial(item.isTodaySpecial || false);
+    setMenuDesc(item.description || "");
+    setMenuIsVeg(item.isVeg || false);
+    setMenuAvailable(item.isAvailable);
+    setMenuIsSpecial(isItemSpecial(item));
     setIsAddMenuOpen(true);
   };
 
-  const handleSaveMenuItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!menuName.trim()) return;
-
-    if (editingMenuItem) {
-      setMenuItems((prev) =>
-        prev.map((item) =>
-          item.id === editingMenuItem.id
-            ? {
-                ...item,
-                name: menuName,
-                category: menuCategory,
-                price: parseFloat(menuPrice) || 0,
-                gstPercent: parseFloat(menuGst) || 0,
-                description: menuDesc,
-                available: menuAvailable,
-                isTodaySpecial: menuIsSpecial,
-              }
-            : item
-        )
-      );
-    } else {
-      const newItem: MenuItem = {
-        id: `M-${Date.now().toString().slice(-3)}`,
-        name: menuName,
-        category: menuCategory,
-        price: parseFloat(menuPrice) || 0,
-        gstPercent: parseFloat(menuGst) || 0,
-        description: menuDesc,
-        available: menuAvailable,
-        isTodaySpecial: menuIsSpecial,
-      };
-      setMenuItems((prev) => [...prev, newItem]);
-    }
-
-    setIsAddMenuOpen(false);
+  // Open Add Menu Item Modal
+  const openAddMenu = () => {
     setEditingMenuItem(null);
     setMenuName("");
+    if (categories.length > 0) {
+      setMenuCategory(categories[0].id);
+    }
+    setMenuPrice("");
     setMenuDesc("");
+    setMenuIsVeg(false);
+    setMenuAvailable(true);
+    setMenuIsSpecial(false);
+    setIsAddMenuOpen(true);
   };
 
-  const handleDeleteMenuItem = (id: string) => {
-    if (confirm("Are you sure you want to delete this menu item?")) {
-      setMenuItems((prev) => prev.filter((item) => item.id !== id));
+  // Save Menu Item Handler (Create & Update)
+  const handleSaveMenuItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!menuName.trim()) {
+      toast.error("Dish name is required");
+      return;
+    }
+    if (!menuCategory) {
+      toast.error("Please select or create a category first");
+      return;
+    }
+    if (!menuPrice || parseFloat(menuPrice) <= 0) {
+      toast.error("Please enter a valid price");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const specialVariants = menuIsSpecial ? [{ name: "special", priceModifier: 0 }] : undefined;
+
+      if (editingMenuItem) {
+        await updateMenuItem(editingMenuItem.id, {
+          name: menuName.trim(),
+          categoryId: menuCategory,
+          price: parseFloat(menuPrice),
+          description: menuDesc.trim() || undefined,
+          isVeg: menuIsVeg,
+          isAvailable: menuAvailable,
+          variants: specialVariants ?? [],
+        });
+        toast.success("Menu item updated successfully");
+      } else {
+        const formData = new FormData();
+        formData.append("name", menuName.trim());
+        formData.append("categoryId", menuCategory);
+        formData.append("price", menuPrice);
+        formData.append("description", menuDesc.trim());
+        formData.append("isVeg", String(menuIsVeg));
+        formData.append("isAvailable", String(menuAvailable));
+        if (specialVariants) {
+          formData.append("variants", JSON.stringify(specialVariants));
+        }
+
+        await createMenuItem(formData);
+        toast.success("New menu item created successfully");
+      }
+
+      await loadMenuData();
+      setIsAddMenuOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save menu item");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Catalog item edit handlers
-  const openEditCatalog = (dish: CatalogItem, sectionCategory: string) => {
-    setCatalogOriginalCategory(sectionCategory);
-    setCatalogOriginalName(dish.name);
-    setCatalogDishName(dish.name);
-    setCatalogCategory(sectionCategory);
-    setCatalogHalfPrice(dish.halfPrice !== null ? dish.halfPrice.toString() : "");
-    setCatalogFullPrice(dish.fullPrice.toString());
-    setCatalogAvailable(dish.available ?? true);
-    setIsEditCatalogOpen(true);
+  // Delete Menu Item Handler
+  const handleDeleteMenuItem = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this menu item?")) return;
+
+    try {
+      await deleteMenuItem(id);
+      toast.success("Menu item deleted");
+      await loadMenuData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete menu item");
+    }
   };
 
-  const handleSaveCatalogDish = (e: React.FormEvent) => {
+  // Save Category Handler (Create & Update)
+  const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!catalogDishName.trim()) return;
+    if (!newCategoryName.trim()) {
+      toast.error("Category name is required");
+      return;
+    }
 
-    const updatedDish: CatalogItem = {
-      name: catalogDishName.trim(),
-      halfPrice: catalogHalfPrice.trim() !== "" ? parseFloat(catalogHalfPrice) : null,
-      fullPrice: parseFloat(catalogFullPrice) || 0,
-      available: catalogAvailable,
-    };
-
-    setCatalogSections((prevSections) => {
-      let newSections = prevSections.map((sec) => ({
-        ...sec,
-        items: [...sec.items],
-      }));
-
-      newSections = newSections.map((sec) => {
-        if (sec.category === catalogOriginalCategory) {
-          return {
-            ...sec,
-            items: sec.items.filter((i) => i.name !== catalogOriginalName),
-          };
-        }
-        return sec;
-      });
-
-      let categoryExists = false;
-      newSections = newSections.map((sec) => {
-        if (sec.category === catalogCategory) {
-          categoryExists = true;
-          return {
-            ...sec,
-            items: [...sec.items, updatedDish],
-          };
-        }
-        return sec;
-      });
-
-      if (!categoryExists) {
-        newSections.push({
-          category: catalogCategory,
-          items: [updatedDish],
+    setIsSubmitting(true);
+    try {
+      if (editingCategory) {
+        await updateCategory(editingCategory.id, {
+          name: newCategoryName.trim(),
+          sortOrder: parseInt(newCategorySort, 10) || 0,
         });
+        toast.success("Category updated successfully");
+      } else {
+        const formData = new FormData();
+        formData.append("name", newCategoryName.trim());
+        formData.append("sortOrder", newCategorySort);
+        await createCategory(formData);
+        toast.success("Category created successfully");
       }
 
-      return newSections;
-    });
+      await loadMenuData();
+      setIsAddCategoryOpen(false);
+      setEditingCategory(null);
+      setNewCategoryName("");
+      setNewCategorySort("0");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save category");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-    setIsEditCatalogOpen(false);
+  // Delete Category Handler
+  const handleDeleteCategory = async (categoryId: string) => {
+    if (!confirm("Deleting this category will also delete all items inside it. Proceed?")) return;
+
+    try {
+      await deleteCategory(categoryId);
+      toast.success("Category deleted");
+      await loadMenuData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete category");
+    }
   };
 
   return (
@@ -398,42 +352,53 @@ export default function MenuModulePage() {
             Menu Management
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Manage food & beverage items, categories, pricing, GST rates, availability, and Today's Specials.
+            Manage food & beverage items, categories, pricing, availability, and Today&apos;s Specials.
           </p>
         </div>
 
-        {activeTab === "menu" && (
+        <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
           <Button
+            variant="outline"
             onClick={() => {
-              setEditingMenuItem(null);
-              setMenuName("");
-              setMenuDesc("");
-              setIsAddMenuOpen(true);
+              setEditingCategory(null);
+              setNewCategoryName("");
+              setNewCategorySort(String(categories.length));
+              setIsAddCategoryOpen(true);
             }}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer border-none"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border-slate-200 hover:bg-slate-50 cursor-pointer h-auto"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Menu Item</span>
+            <FolderPlus className="w-4 h-4 text-blue-600" />
+            <span>Add Category</span>
           </Button>
-        )}
+
+          {activeTab === "menu" && (
+            <Button
+              onClick={openAddMenu}
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer border-none h-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Menu Item</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="TOTAL MENU ITEMS"
-          value={`${menuItems.length} Dishes`}
-          subtext="across all dining categories"
+          value={isLoading ? "..." : `${menuItems.length} Dishes`}
+          subtext={`across ${categories.length} active categories`}
         />
         <StatCard
           label="TODAY'S SPECIALS"
-          value={`${menuItems.filter((m) => m.isTodaySpecial).length} Featured`}
+          value={isLoading ? "..." : `${menuItems.filter((m) => isItemSpecial(m)).length} Featured`}
           subtext="promoted on staff & customer Kiosk"
         />
         <StatCard
           label="AVAILABLE ITEMS"
-          value={`${menuItems.filter((m) => m.available).length} Active`}
-          subtext={`${menuItems.filter((m) => !m.available).length} 86'd / Sold out`}
+          value={isLoading ? "..." : `${menuItems.filter((m) => m.isAvailable).length} Active`}
+          subtext={`${menuItems.filter((m) => !m.isAvailable).length} 86'd / Sold out`}
         />
       </div>
 
@@ -468,19 +433,27 @@ export default function MenuModulePage() {
           )}
         >
           <BookOpen className="w-4 h-4" />
-          <span>Full Restaurant Catalog</span>
+          <span>Categories & Roster ({categories.length})</span>
         </button>
       </div>
 
+      {/* Loading Indicator */}
+      {isLoading && (
+        <div className="design-surface p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span className="text-xs font-medium">Loading live menu from database...</span>
+        </div>
+      )}
+
       {/* TAB 1: MENU ITEMS */}
-      {activeTab === "menu" && (
+      {!isLoading && activeTab === "menu" && (
         <div className="space-y-6">
           {/* Search and Filters Bar */}
           <div className="design-surface p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
               <Input
-                placeholder="Search menu items by name or ingredients..."
+                placeholder="Search menu items by name or description..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -500,10 +473,11 @@ export default function MenuModulePage() {
                 className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none cursor-pointer h-9"
               >
                 <option value="all">All Categories</option>
-                <option value="Starters">Starters</option>
-                <option value="Mains">Mains</option>
-                <option value="Desserts">Desserts</option>
-                <option value="Beverages">Beverages</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
               </select>
 
               <select
@@ -517,7 +491,7 @@ export default function MenuModulePage() {
                 <option value="all">All Statuses</option>
                 <option value="available">Available Only</option>
                 <option value="unavailable">Unavailable Only</option>
-                <option value="specials">Today's Specials</option>
+                <option value="specials">Today&apos;s Specials</option>
               </select>
             </div>
           </div>
@@ -526,109 +500,133 @@ export default function MenuModulePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {paginatedMenuItems.length === 0 ? (
               <div className="col-span-2 design-surface p-12 text-center text-slate-400 text-xs">
-                No menu items match your search or filter criteria.
+                {menuItems.length === 0 ? (
+                  <div className="space-y-3">
+                    <Utensils className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="font-semibold text-slate-700 text-sm">No Menu Items Found</p>
+                    <p>Your restaurant menu is currently empty. Click &quot;Add Menu Item&quot; to create your first dish.</p>
+                    <Button onClick={openAddMenu} className="mt-2 text-xs bg-blue-600 text-white rounded-xl">
+                      <Plus className="w-4 h-4 mr-1" /> Add First Item
+                    </Button>
+                  </div>
+                ) : (
+                  "No menu items match your search or filter criteria."
+                )}
               </div>
             ) : (
-              paginatedMenuItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="design-surface p-6 flex flex-col justify-between hover:shadow-md transition-all group"
-                >
-                  <div>
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono font-semibold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
-                            {item.category}
-                          </span>
-                          {item.isTodaySpecial && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200/60">
-                              <Sparkles className="w-3 h-3" /> Special
+              paginatedMenuItems.map((item) => {
+                const special = isItemSpecial(item);
+
+                return (
+                  <div
+                    key={item.id}
+                    className="design-surface p-6 flex flex-col justify-between hover:shadow-md transition-all group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono font-semibold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
+                              {item.category?.name || "General"}
                             </span>
-                          )}
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                              item.isVeg 
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                : "bg-rose-50 text-rose-700 border-rose-200"
+                            )}>
+                              {item.isVeg ? "VEG" : "NON-VEG"}
+                            </span>
+                            {special && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200/60">
+                                <Sparkles className="w-3 h-3" /> Special
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-bold text-base text-slate-900 mt-2">
+                            {item.name}
+                          </h3>
                         </div>
-                        <h3 className="font-bold text-base text-slate-900 mt-2">
-                          {item.name}
-                        </h3>
+
+                        {/* Availability Toggle Switch */}
+                        <button
+                          onClick={() => handleToggleAvailability(item.id, item.isAvailable)}
+                          className={cn(
+                            "px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1",
+                            item.isAvailable
+                              ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
+                              : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
+                          )}
+                          title="Click to toggle availability"
+                        >
+                          {item.isAvailable ? (
+                            <>
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>Available</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>Sold Out</span>
+                            </>
+                          )}
+                        </button>
                       </div>
 
-                      {/* Availability Toggle Switch */}
-                      <button
-                        onClick={() => handleToggleAvailability(item.id)}
-                        className={cn(
-                          "px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1",
-                          item.available
-                            ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
-                            : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
-                        )}
-                        title="Click to toggle availability"
-                      >
-                        {item.available ? (
-                          <>
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>Available</span>
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Sold Out</span>
-                          </>
-                        )}
-                      </button>
+                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+                        {item.description || "No description provided."}
+                      </p>
                     </div>
 
-                    <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-                      {item.description}
-                    </p>
-                  </div>
+                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-lg text-slate-900">
+                          ₹{item.price.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block font-mono">
+                          + 5% GST
+                        </span>
+                      </div>
 
-                  <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <div>
-                      <span className="font-mono font-bold text-lg text-slate-900">
-                        ₹{item.price.toFixed(2)}
-                      </span>
-                      <span className="text-[10px] text-slate-400 block font-mono">
-                        + {item.gstPercent}% GST
-                      </span>
-                    </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleSpecial(item)}
+                          className={cn(
+                            "h-8 px-2.5 text-xs font-semibold rounded-lg border cursor-pointer transition-colors",
+                            special
+                              ? "bg-amber-50 text-amber-600 border-amber-200"
+                              : "text-slate-500 border-slate-200 hover:bg-slate-100"
+                          )}
+                          title="Toggle Today's Special"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </Button>
 
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleToggleSpecial(item.id)}
-                        className={cn(
-                          "h-8 px-2.5 text-xs font-semibold rounded-lg border cursor-pointer transition-colors",
-                          item.isTodaySpecial
-                            ? "bg-amber-50 text-amber-600 border-amber-200"
-                            : "text-slate-500 border-slate-200 hover:bg-slate-100"
-                        )}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                      </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditMenu(item)}
+                          className="h-8 px-3 text-xs font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-lg cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 mr-1" />
+                          <span>Edit</span>
+                        </Button>
 
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEditMenu(item)}
-                        className="h-8 px-3 text-xs font-semibold text-slate-700 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-lg cursor-pointer"
-                      >
-                        <Edit2 className="w-3.5 h-3.5 mr-1" />
-                        <span>Edit</span>
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteMenuItem(item.id)}
-                        className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-lg cursor-pointer p-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteMenuItem(item.id)}
+                          className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-lg cursor-pointer p-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -664,84 +662,146 @@ export default function MenuModulePage() {
         </div>
       )}
 
-      {/* TAB 2: CATALOGUE MANAGEMENT */}
-      {activeTab === "catalog" && (
+      {/* TAB 2: CATALOGUE & CATEGORY ROSTER */}
+      {!isLoading && activeTab === "catalog" && (
         <div className="space-y-6">
           <div className="design-surface p-6">
             <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
               <div>
                 <span className="text-[10px] font-mono font-bold text-blue-600 uppercase">
-                  MASTER RESTAURANT MENU CATALOG
+                  MASTER RESTAURANT CATEGORY ROSTER
                 </span>
                 <h3 className="text-xl font-bold text-slate-900 mt-0.5">
-                  Category Pricing & Availability Roster
+                  Categories & Dish Allocation
                 </h3>
               </div>
-              <span className="text-xs text-slate-500 font-mono">
-                Amounts in ₹ (INR)
-              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditingCategory(null);
+                  setNewCategoryName("");
+                  setNewCategorySort(String(categories.length));
+                  setIsAddCategoryOpen(true);
+                }}
+                className="text-xs rounded-xl"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" /> Add Category
+              </Button>
             </div>
 
             <div className="space-y-8">
-              {catalogSections.map((section) => (
-                <div key={section.category} className="space-y-3">
-                  <div className="flex items-center justify-between bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200/80">
-                    <span className="font-bold text-sm text-slate-900">{section.category}</span>
-                    <span className="text-xs text-slate-500 font-mono font-medium">
-                      {section.items.length} dishes
-                    </span>
-                  </div>
-
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold text-slate-400 uppercase">
-                        <TableHead className="py-2.5 px-4 h-auto">DISH NAME</TableHead>
-                        <TableHead className="py-2.5 px-4 h-auto text-right">HALF PORTION (₹)</TableHead>
-                        <TableHead className="py-2.5 px-4 h-auto text-right">FULL PORTION (₹)</TableHead>
-                        <TableHead className="py-2.5 px-4 h-auto text-center">STATUS</TableHead>
-                        <TableHead className="py-2.5 px-4 h-auto text-right">ACTIONS</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody className="divide-y divide-slate-100 text-xs">
-                      {section.items.map((dish, i) => (
-                        <TableRow key={i} className="hover:bg-slate-50/80 transition-colors">
-                          <TableCell className="py-3 px-4 font-semibold text-slate-900">
-                            {dish.name}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-right font-mono text-slate-700">
-                            {dish.halfPrice !== null ? `₹${dish.halfPrice}` : "—"}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                            ₹{dish.fullPrice}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-center">
-                            <span
-                              className={cn(
-                                "px-2.5 py-0.5 rounded-full text-[10px] font-bold border",
-                                dish.available !== false
-                                  ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                                  : "bg-rose-50 text-rose-600 border-rose-200"
-                              )}
-                            >
-                              {dish.available !== false ? "Available" : "Unavailable"}
-                            </span>
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEditCatalog(dish, section.category)}
-                              className="h-7 px-2.5 text-xs text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg cursor-pointer"
-                            >
-                              <Edit2 className="w-3 h-3 mr-1" /> Edit
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+              {categories.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  No categories created yet. Click &quot;Add Category&quot; to define your menu sections.
                 </div>
-              ))}
+              ) : (
+                categories.map((category) => {
+                  const categoryItems = menuItems.filter((i) => i.categoryId === category.id);
+
+                  return (
+                    <div key={category.id} className="space-y-3">
+                      <div className="flex items-center justify-between bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200/80">
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-sm text-slate-900">{category.name}</span>
+                          <span className="text-[10px] font-mono text-slate-400 bg-slate-200/60 px-2 py-0.5 rounded">
+                            Sort: {category.sortOrder}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500 font-mono font-medium mr-2">
+                            {categoryItems.length} dishes
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingCategory(category);
+                              setNewCategoryName(category.name);
+                              setNewCategorySort(String(category.sortOrder));
+                              setIsAddCategoryOpen(true);
+                            }}
+                            className="h-7 px-2 text-xs text-slate-600 hover:bg-slate-200 rounded"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteCategory(category.id)}
+                            className="h-7 px-2 text-xs text-rose-600 hover:bg-rose-50 rounded"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold text-slate-400 uppercase">
+                            <TableHead className="py-2.5 px-4 h-auto">DISH NAME</TableHead>
+                            <TableHead className="py-2.5 px-4 h-auto">TYPE</TableHead>
+                            <TableHead className="py-2.5 px-4 h-auto text-right">PRICE (₹)</TableHead>
+                            <TableHead className="py-2.5 px-4 h-auto text-center">STATUS</TableHead>
+                            <TableHead className="py-2.5 px-4 h-auto text-right">ACTIONS</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody className="divide-y divide-slate-100 text-xs">
+                          {categoryItems.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center py-4 text-slate-400 text-xs">
+                                No dishes assigned to this category.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            categoryItems.map((dish) => (
+                              <TableRow key={dish.id} className="hover:bg-slate-50/80 transition-colors">
+                                <TableCell className="py-3 px-4 font-semibold text-slate-900">
+                                  {dish.name}
+                                </TableCell>
+                                <TableCell className="py-3 px-4">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded text-[10px] font-bold",
+                                    dish.isVeg ? "text-emerald-700 bg-emerald-50" : "text-rose-700 bg-rose-50"
+                                  )}>
+                                    {dish.isVeg ? "Veg" : "Non-Veg"}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                                  ₹{dish.price.toFixed(2)}
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-center">
+                                  <span
+                                    className={cn(
+                                      "px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-block",
+                                      dish.isAvailable
+                                        ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                                        : "bg-rose-50 text-rose-600 border-rose-200"
+                                    )}
+                                  >
+                                    {dish.isAvailable ? "Available" : "Sold Out"}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openEditMenu(dish)}
+                                    className="h-7 px-2.5 text-xs text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3 h-3 mr-1" /> Edit
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -752,43 +812,50 @@ export default function MenuModulePage() {
         isOpen={isAddMenuOpen}
         onClose={() => setIsAddMenuOpen(false)}
         title={editingMenuItem ? "Edit Menu Item" : "Add New Menu Item"}
-        subtitle="Specify dish name, category, price, GST, and description."
+        subtitle="Specify dish name, category, price, diet type, and description."
       >
         <form onSubmit={handleSaveMenuItem} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Dish Name
+              Dish Name *
             </label>
             <Input
               type="text"
               required
               value={menuName}
               onChange={(e) => setMenuName(e.target.value)}
-              placeholder="e.g. Grilled Sea Bass"
+              placeholder="e.g. Butter Chicken"
               className="w-full px-3 py-2 h-10 text-xs rounded-xl"
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Category
+                Category *
               </label>
-              <select
-                value={menuCategory}
-                onChange={(e) => setMenuCategory(e.target.value)}
-                className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
-              >
-                <option value="Starters">Starters</option>
-                <option value="Mains">Mains</option>
-                <option value="Desserts">Desserts</option>
-                <option value="Beverages">Beverages</option>
-              </select>
+              {categories.length === 0 ? (
+                <div className="text-xs text-rose-500 py-2">
+                  No categories. Please add a category first.
+                </div>
+              ) : (
+                <select
+                  value={menuCategory}
+                  onChange={(e) => setMenuCategory(e.target.value)}
+                  className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Price (₹)
+                Price (₹) *
               </label>
               <Input
                 type="number"
@@ -796,19 +863,7 @@ export default function MenuModulePage() {
                 required
                 value={menuPrice}
                 onChange={(e) => setMenuPrice(e.target.value)}
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                GST %
-              </label>
-              <Input
-                type="number"
-                required
-                value={menuGst}
-                onChange={(e) => setMenuGst(e.target.value)}
+                placeholder="290.00"
                 className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
               />
             </div>
@@ -827,7 +882,17 @@ export default function MenuModulePage() {
             />
           </div>
 
-          <div className="flex items-center gap-6 pt-2">
+          <div className="flex items-center gap-6 pt-2 flex-wrap">
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={menuIsVeg}
+                onChange={(e) => setMenuIsVeg(e.target.checked)}
+                className="rounded border-slate-300 text-emerald-600"
+              />
+              <span className="text-emerald-700">Vegetarian Dish (Veg)</span>
+            </label>
+
             <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
               <input
                 type="checkbox"
@@ -845,7 +910,7 @@ export default function MenuModulePage() {
                 onChange={(e) => setMenuIsSpecial(e.target.checked)}
                 className="rounded border-slate-300 text-amber-600"
               />
-              <span>Mark as Today's Special</span>
+              <span>Mark as Today&apos;s Special</span>
             </label>
           </div>
 
@@ -860,108 +925,76 @@ export default function MenuModulePage() {
             </Button>
             <Button
               type="submit"
-              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none"
+              disabled={isSubmitting}
+              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none cursor-pointer"
             >
-              Save Menu Item
+              {isSubmitting ? (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+                </span>
+              ) : (
+                "Save Menu Item"
+              )}
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Modal: Edit Catalog Item */}
+      {/* Modal: Add/Edit Category */}
       <Modal
-        isOpen={isEditCatalogOpen}
-        onClose={() => setIsEditCatalogOpen(false)}
-        title="Edit Catalog Item"
-        subtitle="Update dish pricing & availability in master catalog."
+        isOpen={isAddCategoryOpen}
+        onClose={() => setIsAddCategoryOpen(false)}
+        title={editingCategory ? "Edit Category" : "Add New Category"}
+        subtitle="Organize dishes into dining sections (e.g. Starters, Main Course, Beverages)."
       >
-        <form onSubmit={handleSaveCatalogDish} className="space-y-4">
+        <form onSubmit={handleSaveCategory} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Dish Name
+              Category Name *
             </label>
             <Input
               type="text"
               required
-              value={catalogDishName}
-              onChange={(e) => setCatalogDishName(e.target.value)}
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="e.g. Starters, Desserts, Italian"
               className="w-full px-3 py-2 h-10 text-xs rounded-xl"
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Category
-              </label>
-              <select
-                value={catalogCategory}
-                onChange={(e) => setCatalogCategory(e.target.value)}
-                className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
-              >
-                <option value="Veg Starters">Veg Starters</option>
-                <option value="Non-Veg Starters">Non-Veg Starters</option>
-                <option value="Soups">Soups</option>
-                <option value="Main Course">Main Course</option>
-                <option value="Biryani">Biryani</option>
-                <option value="Chinese">Chinese</option>
-                <option value="Desserts & Beverages">Desserts & Beverages</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Half Price (₹)
-              </label>
-              <Input
-                type="number"
-                value={catalogHalfPrice}
-                onChange={(e) => setCatalogHalfPrice(e.target.value)}
-                placeholder="Optional"
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Full Price (₹)
-              </label>
-              <Input
-                type="number"
-                required
-                value={catalogFullPrice}
-                onChange={(e) => setCatalogFullPrice(e.target.value)}
-                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={catalogAvailable}
-                onChange={(e) => setCatalogAvailable(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600"
-              />
-              <span>Available in Catalog</span>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Display Sort Order
             </label>
+            <Input
+              type="number"
+              value={newCategorySort}
+              onChange={(e) => setNewCategorySort(e.target.value)}
+              className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
+            />
           </div>
 
           <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setIsEditCatalogOpen(false)}
+              onClick={() => setIsAddCategoryOpen(false)}
               className="px-4 py-2 h-9 text-xs"
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none"
+              disabled={isSubmitting}
+              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none cursor-pointer"
             >
-              Update Catalog Item
+              {isSubmitting ? (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+                </span>
+              ) : (
+                "Save Category"
+              )}
             </Button>
           </div>
         </form>

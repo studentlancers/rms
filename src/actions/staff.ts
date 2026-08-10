@@ -55,15 +55,20 @@ export async function inviteStaff(formData: FormData) {
  * Owner and Admin can list staff.
  */
 export async function listStaff() {
-  await requireRole(["owner", "admin"]);
-  const restaurantId = await getActiveRestaurantId();
+  try {
+    await requireRole(["owner", "admin"]);
+    const restaurantId = await getActiveRestaurantId();
 
-  const members = await auth.api.listMembers({
-    query: { organizationId: restaurantId },
-    headers: await headers(),
-  });
+    const members = await auth.api.listMembers({
+      query: { organizationId: restaurantId },
+      headers: await headers(),
+    });
 
-  return members;
+    return members;
+  } catch (error) {
+    console.error("Error in listStaff action:", error);
+    return [];
+  }
 }
 
 /**
@@ -71,15 +76,20 @@ export async function listStaff() {
  * Owner only.
  */
 export async function listPendingInvitations() {
-  await requireRole(["owner"]);
-  const restaurantId = await getActiveRestaurantId();
+  try {
+    await requireRole(["owner"]);
+    const restaurantId = await getActiveRestaurantId();
 
-  const invitations = await auth.api.listInvitations({
-    query: { organizationId: restaurantId },
-    headers: await headers(),
-  });
+    const invitations = await auth.api.listInvitations({
+      query: { organizationId: restaurantId },
+      headers: await headers(),
+    });
 
-  return invitations;
+    return invitations;
+  } catch (error) {
+    console.error("Error in listPendingInvitations action:", error);
+    return [];
+  }
 }
 
 /**

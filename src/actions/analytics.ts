@@ -27,39 +27,44 @@ interface DateRange {
  * Owner only.
  */
 export async function getDailySales(dateRange: DateRange) {
-  await requireRole(["owner"]);
-  const restaurantId = await getActiveRestaurantId();
+  try {
+    await requireRole(["owner"]);
+    const restaurantId = await getActiveRestaurantId();
 
-  const orders = await db.order.findMany({
-    where: {
-      restaurantId,
-      status: "COMPLETED",
-      createdAt: { gte: dateRange.from, lte: dateRange.to },
-    },
-    select: {
-      createdAt: true,
-      subtotal: true,
-      tax: true,
-      total: true,
-    },
-    orderBy: { createdAt: "asc" },
-  });
+    const orders = await db.order.findMany({
+      where: {
+        restaurantId,
+        status: "COMPLETED",
+        createdAt: { gte: dateRange.from, lte: dateRange.to },
+      },
+      select: {
+        createdAt: true,
+        subtotal: true,
+        tax: true,
+        total: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
 
-  // Group by day.
-  const byDay: Record<string, { date: string; subtotal: number; tax: number; total: number; count: number }> = {};
+    // Group by day.
+    const byDay: Record<string, { date: string; subtotal: number; tax: number; total: number; count: number }> = {};
 
-  for (const order of orders) {
-    const day = order.createdAt.toISOString().slice(0, 10);
-    if (!byDay[day]) {
-      byDay[day] = { date: day, subtotal: 0, tax: 0, total: 0, count: 0 };
+    for (const order of orders) {
+      const day = order.createdAt.toISOString().slice(0, 10);
+      if (!byDay[day]) {
+        byDay[day] = { date: day, subtotal: 0, tax: 0, total: 0, count: 0 };
+      }
+      byDay[day].subtotal += order.subtotal;
+      byDay[day].tax += order.tax;
+      byDay[day].total += order.total;
+      byDay[day].count += 1;
     }
-    byDay[day].subtotal += order.subtotal;
-    byDay[day].tax += order.tax;
-    byDay[day].total += order.total;
-    byDay[day].count += 1;
-  }
 
-  return Object.values(byDay);
+    return Object.values(byDay);
+  } catch (error) {
+    console.error("Error in getDailySales action:", error);
+    return [];
+  }
 }
 
 /**
@@ -70,46 +75,51 @@ export async function getTopItems(
   dateRange: DateRange,
   limit: number = 10
 ) {
-  await requireRole(["owner"]);
-  const restaurantId = await getActiveRestaurantId();
+  try {
+    await requireRole(["owner"]);
+    const restaurantId = await getActiveRestaurantId();
 
-  const orders = await db.order.findMany({
-    where: {
-      restaurantId,
-      status: "COMPLETED",
-      createdAt: { gte: dateRange.from, lte: dateRange.to },
-    },
-    select: { items: true },
-  });
+    const orders = await db.order.findMany({
+      where: {
+        restaurantId,
+        status: "COMPLETED",
+        createdAt: { gte: dateRange.from, lte: dateRange.to },
+      },
+      select: { items: true },
+    });
 
-  // Aggregate item quantities from JSON blobs.
-  const itemTotals: Record<string, { name: string; quantity: number; revenue: number }> = {};
+    // Aggregate item quantities from JSON blobs.
+    const itemTotals: Record<string, { name: string; quantity: number; revenue: number }> = {};
 
-  for (const order of orders) {
-    const items = order.items as Array<{
-      menuItemId: string;
-      name: string;
-      quantity: number;
-      unitPrice: number;
-    }>;
-    for (const item of items) {
-      if (!itemTotals[item.menuItemId]) {
-        itemTotals[item.menuItemId] = {
-          name: item.name,
-          quantity: 0,
-          revenue: 0,
-        };
+    for (const order of orders) {
+      const items = order.items as Array<{
+        menuItemId: string;
+        name: string;
+        quantity: number;
+        unitPrice: number;
+      }>;
+      for (const item of items) {
+        if (!itemTotals[item.menuItemId]) {
+          itemTotals[item.menuItemId] = {
+            name: item.name,
+            quantity: 0,
+            revenue: 0,
+          };
+        }
+        itemTotals[item.menuItemId].quantity += item.quantity;
+        itemTotals[item.menuItemId].revenue +=
+          item.unitPrice * item.quantity;
       }
-      itemTotals[item.menuItemId].quantity += item.quantity;
-      itemTotals[item.menuItemId].revenue +=
-        item.unitPrice * item.quantity;
     }
-  }
 
-  return Object.entries(itemTotals)
-    .map(([menuItemId, data]) => ({ menuItemId, ...data }))
-    .sort((a, b) => b.quantity - a.quantity)
-    .slice(0, limit);
+    return Object.entries(itemTotals)
+      .map(([menuItemId, data]) => ({ menuItemId, ...data }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, limit);
+  } catch (error) {
+    console.error("Error in getTopItems action:", error);
+    return [];
+  }
 }
 
 /**

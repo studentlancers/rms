@@ -1,11 +1,9 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { Modal } from "@/components/ui/modal";
+import React, { useState, useEffect, useMemo } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { StatCard } from "@/components/ui/stat-card";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableHeader,
@@ -23,192 +21,98 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  Filter,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import {
+  listCategories,
+  listMenuItems,
+  toggleMenuItemAvailability,
+  updateMenuItem,
+} from "@/actions/menu";
 
-interface MenuItem {
+interface CategoryData {
   id: string;
   name: string;
-  category: string;
-  price: number;
-  gstPercent: number;
-  description: string;
-  available: boolean;
-  isTodaySpecial?: boolean;
+  sortOrder: number;
 }
 
-interface CatalogItem {
+interface MenuItemData {
+  id: string;
+  categoryId: string;
+  category?: CategoryData;
   name: string;
-  halfPrice: number | null;
-  fullPrice: number;
-  available?: boolean;
-}
-
-interface CatalogSection {
-  category: string;
-  items: CatalogItem[];
+  price: number;
+  description: string | null;
+  isVeg: boolean;
+  isAvailable: boolean;
+  variants?: any;
 }
 
 export default function StaffMenuPage() {
   const [activeTab, setActiveTab] = useState<"menu" | "catalog">("menu");
 
-  // Catalog Sections
-  const initialCatalogSections: CatalogSection[] = [
-    {
-      category: "Veg Starters",
-      items: [
-        { name: "Paneer Tikka", halfPrice: 180, fullPrice: 320, available: true },
-        { name: "Hara Bhara Kebab", halfPrice: 150, fullPrice: 270, available: true },
-        { name: "Crispy Corn Chili Pepper", halfPrice: 160, fullPrice: 280, available: true },
-        { name: "Mushroom Multani", halfPrice: 190, fullPrice: 340, available: true },
-      ],
-    },
-    {
-      category: "Non-Veg Starters",
-      items: [
-        { name: "Chicken Tikka", halfPrice: 220, fullPrice: 390, available: true },
-        { name: "Tandoori Chicken", halfPrice: 240, fullPrice: 440, available: true },
-        { name: "Fish Amritsari", halfPrice: 280, fullPrice: 490, available: true },
-        { name: "Mutton Seekh Kebab", halfPrice: 310, fullPrice: 550, available: true },
-      ],
-    },
-    {
-      category: "Soups",
-      items: [
-        { name: "Tomato Basil Soup", halfPrice: 90, fullPrice: 150, available: true },
-        { name: "Sweet Corn Chicken Soup", halfPrice: 110, fullPrice: 180, available: true },
-        { name: "Hot & Sour Veg Soup", halfPrice: 100, fullPrice: 160, available: true },
-        { name: "Manchow Soup (Veg / Non-Veg)", halfPrice: 110, fullPrice: 190, available: true },
-      ],
-    },
-    {
-      category: "Main Course",
-      items: [
-        { name: "Dal Makhani", halfPrice: 170, fullPrice: 290, available: true },
-        { name: "Paneer Butter Masala", halfPrice: 200, fullPrice: 360, available: true },
-        { name: "Butter Chicken", halfPrice: 250, fullPrice: 450, available: true },
-        { name: "Mutton Rogan Josh", halfPrice: 310, fullPrice: 560, available: true },
-        { name: "Kadhai Paneer", halfPrice: 190, fullPrice: 340, available: true },
-      ],
-    },
-    {
-      category: "Biryani",
-      items: [
-        { name: "Veg Dum Biryani", halfPrice: 180, fullPrice: 310, available: true },
-        { name: "Hyderabadi Chicken Biryani", halfPrice: 230, fullPrice: 410, available: true },
-        { name: "Special Mutton Biryani", halfPrice: 290, fullPrice: 520, available: true },
-        { name: "Egg Biryani", halfPrice: 160, fullPrice: 280, available: true },
-      ],
-    },
-    {
-      category: "Chinese",
-      items: [
-        { name: "Veg Hakka Noodles", halfPrice: 140, fullPrice: 240, available: true },
-        { name: "Chili Chicken Dry / Gravy", halfPrice: 210, fullPrice: 370, available: true },
-        { name: "Veg Fried Rice", halfPrice: 130, fullPrice: 230, available: true },
-        { name: "Chicken Schezwan Fried Rice", halfPrice: 170, fullPrice: 300, available: true },
-      ],
-    },
-    {
-      category: "Desserts & Beverages",
-      items: [
-        { name: "Gulab Jamun (2 pcs)", halfPrice: null, fullPrice: 120, available: true },
-        { name: "Rasmalai (2 pcs)", halfPrice: null, fullPrice: 150, available: true },
-        { name: "Fresh Lime Soda", halfPrice: null, fullPrice: 110, available: true },
-        { name: "Cold Coffee with Ice Cream", halfPrice: null, fullPrice: 160, available: true },
-      ],
-    },
-  ];
+  // Dynamic Data States
+  const [categories, setCategories] = useState<CategoryData[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [catalogSections] = useState<CatalogSection[]>(initialCatalogSections);
-
-  // Menu items state
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([
-    {
-      id: "M-1",
-      name: "Pan-Seared Atlantic Salmon",
-      category: "Mains",
-      price: 1250.0,
-      gstPercent: 5,
-      description: "Crispy skin salmon with crushed heirloom potatoes & dill emulsion.",
-      available: true,
-      isTodaySpecial: true,
-    },
-    {
-      id: "M-2",
-      name: "Burrata di Puglia Salad",
-      category: "Starters",
-      price: 680.0,
-      gstPercent: 5,
-      description: "Fresh Puglia burrata, vine tomatoes, basil oil & balsamic reduction.",
-      available: true,
-      isTodaySpecial: false,
-    },
-    {
-      id: "M-3",
-      name: "Wagyu Ribeye Steak 300g",
-      category: "Mains",
-      price: 2450.0,
-      gstPercent: 5,
-      description: "Charcoal grilled MB5+ ribeye with red wine jus & truffle fries.",
-      available: true,
-      isTodaySpecial: true,
-    },
-    {
-      id: "M-4",
-      name: "Tiramisu Tradizionale",
-      category: "Desserts",
-      price: 450.0,
-      gstPercent: 5,
-      description: "Espresso soaked savoiardi, mascarpone cream & cocoa powder.",
-      available: false,
-      isTodaySpecial: false,
-    },
-    {
-      id: "M-5",
-      name: "Tandoori Whole Pomfret",
-      category: "Starters",
-      price: 950.0,
-      gstPercent: 5,
-      description: "Fresh ocean pomfret marinated in coastal spices & chargrilled.",
-      available: true,
-      isTodaySpecial: true,
-    },
-    {
-      id: "M-6",
-      name: "Truffle Mushroom Risotto",
-      category: "Mains",
-      price: 820.0,
-      gstPercent: 5,
-      description: "Arborio rice, wild porcini mushrooms, black truffle butter & parmesan.",
-      available: true,
-      isTodaySpecial: false,
-    },
-  ]);
-
-  // Search, Category, and Availability Filters
+  // Search & Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedAvailability, setSelectedAvailability] = useState("all");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 4;
+  const itemsPerPage = 6;
+
+  // Load menu data from backend
+  const loadMenuData = async () => {
+    try {
+      setIsLoading(true);
+      const [cats, items] = await Promise.all([
+        listCategories(),
+        listMenuItems(),
+      ]);
+      setCategories(cats || []);
+      setMenuItems(items || []);
+    } catch (err: any) {
+      console.error("Error loading staff menu data:", err);
+      toast.error(err.message || "Failed to load menu data");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMenuData();
+  }, []);
+
+  // Helper to check if an item is special
+  const isItemSpecial = (item: MenuItemData) => {
+    if (!item.variants) return false;
+    if (Array.isArray(item.variants)) {
+      return item.variants.some((v: any) => v.name === "special" || v.isSpecial);
+    }
+    return false;
+  };
 
   // Filtered Menu Items
   const filteredMenuItems = useMemo(() => {
     return menuItems.filter((item) => {
       const matchesSearch =
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.description.toLowerCase().includes(searchQuery.toLowerCase());
+        (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesCategory =
-        selectedCategory === "all" || item.category.toLowerCase() === selectedCategory.toLowerCase();
+        selectedCategory === "all" || item.categoryId === selectedCategory;
+      
+      const special = isItemSpecial(item);
       const matchesAvailability =
         selectedAvailability === "all" ||
-        (selectedAvailability === "available" && item.available) ||
-        (selectedAvailability === "unavailable" && !item.available) ||
-        (selectedAvailability === "specials" && item.isTodaySpecial);
+        (selectedAvailability === "available" && item.isAvailable) ||
+        (selectedAvailability === "unavailable" && !item.isAvailable) ||
+        (selectedAvailability === "specials" && special);
 
       return matchesSearch && matchesCategory && matchesAvailability;
     });
@@ -222,20 +126,38 @@ export default function StaffMenuPage() {
 
   const totalPages = Math.ceil(filteredMenuItems.length / itemsPerPage) || 1;
 
-  // Toggle availability handler
-  const handleToggleAvailability = (id: string) => {
+  // Toggle Availability Handler (86 Dish)
+  const handleToggleAvailability = async (id: string, currentAvailable: boolean) => {
+    // Optimistic Update
     setMenuItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, available: !item.available } : item))
+      prev.map((item) => (item.id === id ? { ...item, isAvailable: !currentAvailable } : item))
     );
+
+    try {
+      await toggleMenuItemAvailability(id, !currentAvailable);
+      toast.success(
+        !currentAvailable ? "Item marked as Available" : "Item marked as Sold Out (86'd)"
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update item availability");
+      await loadMenuData(); // revert
+    }
   };
 
-  // Toggle Today's Special handler
-  const handleToggleSpecial = (id: string) => {
-    setMenuItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, isTodaySpecial: !item.isTodaySpecial } : item
-      )
-    );
+  // Toggle Today's Special Handler
+  const handleToggleSpecial = async (item: MenuItemData) => {
+    const currentlySpecial = isItemSpecial(item);
+    const updatedVariants = !currentlySpecial
+      ? [{ name: "special", priceModifier: 0 }]
+      : [];
+
+    try {
+      await updateMenuItem(item.id, { variants: updatedVariants });
+      toast.success(!currentlySpecial ? "Marked as Today's Special" : "Removed from Today's Specials");
+      await loadMenuData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update special status");
+    }
   };
 
   return (
@@ -259,18 +181,18 @@ export default function StaffMenuPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="TOTAL CATALOGUE DISHES"
-          value={`${menuItems.length} Active`}
-          subtext="across all active categories"
+          value={isLoading ? "..." : `${menuItems.length} Active`}
+          subtext={`across ${categories.length} active categories`}
         />
         <StatCard
           label="TODAY'S FEATURED SPECIALS"
-          value={`${menuItems.filter((m) => m.isTodaySpecial).length} Promoted`}
+          value={isLoading ? "..." : `${menuItems.filter((m) => isItemSpecial(m)).length} Promoted`}
           subtext="highlighted for staff order taking"
         />
         <StatCard
           label="AVAILABLE IN KITCHEN"
-          value={`${menuItems.filter((m) => m.available).length} Ready`}
-          subtext={`${menuItems.filter((m) => !m.available).length} 86'd / Sold out`}
+          value={isLoading ? "..." : `${menuItems.filter((m) => m.isAvailable).length} Ready`}
+          subtext={`${menuItems.filter((m) => !m.isAvailable).length} 86'd / Sold out`}
         />
       </div>
 
@@ -305,12 +227,20 @@ export default function StaffMenuPage() {
           )}
         >
           <BookOpen className="w-4 h-4" />
-          <span>Full Restaurant Catalog</span>
+          <span>Full Restaurant Catalog ({categories.length})</span>
         </button>
       </div>
 
+      {/* Loading State */}
+      {isLoading && (
+        <div className="design-surface p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span className="text-xs font-medium">Loading live menu from database...</span>
+        </div>
+      )}
+
       {/* TAB 1: MENU ITEMS */}
-      {activeTab === "menu" && (
+      {!isLoading && activeTab === "menu" && (
         <div className="space-y-6">
           {/* Search and Filters Bar */}
           <div className="design-surface p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -337,10 +267,11 @@ export default function StaffMenuPage() {
                 className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 focus:outline-none cursor-pointer h-9"
               >
                 <option value="all">All Categories</option>
-                <option value="Starters">Starters</option>
-                <option value="Mains">Mains</option>
-                <option value="Desserts">Desserts</option>
-                <option value="Beverages">Beverages</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
               </select>
 
               <select
@@ -354,7 +285,7 @@ export default function StaffMenuPage() {
                 <option value="all">All Statuses</option>
                 <option value="available">Available Only</option>
                 <option value="unavailable">Unavailable Only</option>
-                <option value="specials">Today's Specials</option>
+                <option value="specials">Today&apos;s Specials</option>
               </select>
             </div>
           </div>
@@ -366,88 +297,100 @@ export default function StaffMenuPage() {
                 No menu items match your search or filter criteria.
               </div>
             ) : (
-              paginatedMenuItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="design-surface p-6 flex flex-col justify-between hover:shadow-md transition-all group"
-                >
-                  <div>
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono font-semibold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
-                            {item.category}
-                          </span>
-                          {item.isTodaySpecial && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200/60">
-                              <Sparkles className="w-3 h-3" /> Special
+              paginatedMenuItems.map((item) => {
+                const special = isItemSpecial(item);
+
+                return (
+                  <div
+                    key={item.id}
+                    className="design-surface p-6 flex flex-col justify-between hover:shadow-md transition-all group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono font-semibold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
+                              {item.category?.name || "General"}
                             </span>
-                          )}
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                              item.isVeg 
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                : "bg-rose-50 text-rose-700 border-rose-200"
+                            )}>
+                              {item.isVeg ? "VEG" : "NON-VEG"}
+                            </span>
+                            {special && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200/60">
+                                <Sparkles className="w-3 h-3" /> Special
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-bold text-base text-slate-900 mt-2">
+                            {item.name}
+                          </h3>
                         </div>
-                        <h3 className="font-bold text-base text-slate-900 mt-2">
-                          {item.name}
-                        </h3>
+
+                        {/* Availability Toggle Switch */}
+                        <button
+                          onClick={() => handleToggleAvailability(item.id, item.isAvailable)}
+                          className={cn(
+                            "px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1",
+                            item.isAvailable
+                              ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
+                              : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
+                          )}
+                          title="Click to toggle availability in kitchen"
+                        >
+                          {item.isAvailable ? (
+                            <>
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>Available</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>Sold Out</span>
+                            </>
+                          )}
+                        </button>
                       </div>
 
-                      {/* Availability Toggle Switch */}
-                      <button
-                        onClick={() => handleToggleAvailability(item.id)}
-                        className={cn(
-                          "px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1",
-                          item.available
-                            ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
-                            : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
-                        )}
-                        title="Click to toggle availability"
-                      >
-                        {item.available ? (
-                          <>
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            <span>Available</span>
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Sold Out</span>
-                          </>
-                        )}
-                      </button>
+                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+                        {item.description || "No description provided."}
+                      </p>
                     </div>
 
-                    <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-                      {item.description}
-                    </p>
-                  </div>
+                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                      <div>
+                        <span className="font-mono font-bold text-lg text-slate-900">
+                          ₹{item.price.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block font-mono">
+                          + 5% GST
+                        </span>
+                      </div>
 
-                  <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <div>
-                      <span className="font-mono font-bold text-lg text-slate-900">
-                        ₹{item.price.toFixed(2)}
-                      </span>
-                      <span className="text-[10px] text-slate-400 block font-mono">
-                        + {item.gstPercent}% GST
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleToggleSpecial(item.id)}
-                        className={cn(
-                          "h-8 px-3 text-xs font-semibold rounded-lg border cursor-pointer transition-colors flex items-center gap-1",
-                          item.isTodaySpecial
-                            ? "bg-amber-50 text-amber-600 border-amber-200"
-                            : "text-slate-500 border-slate-200 hover:bg-slate-100"
-                        )}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>{item.isTodaySpecial ? "Special Item" : "Mark Special"}</span>
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleSpecial(item)}
+                          className={cn(
+                            "h-8 px-3 text-xs font-semibold rounded-lg border cursor-pointer transition-colors flex items-center gap-1",
+                            special
+                              ? "bg-amber-50 text-amber-600 border-amber-200"
+                              : "text-slate-500 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>{special ? "Special Item" : "Mark Special"}</span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -483,8 +426,8 @@ export default function StaffMenuPage() {
         </div>
       )}
 
-      {/* TAB 2: CATALOGUE MANAGEMENT */}
-      {activeTab === "catalog" && (
+      {/* TAB 2: CATALOGUE VIEW */}
+      {!isLoading && activeTab === "catalog" && (
         <div className="space-y-6">
           <div className="design-surface p-6">
             <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
@@ -502,54 +445,78 @@ export default function StaffMenuPage() {
             </div>
 
             <div className="space-y-8">
-              {catalogSections.map((section) => (
-                <div key={section.category} className="space-y-3">
-                  <div className="flex items-center justify-between bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200/80">
-                    <span className="font-bold text-sm text-slate-900">{section.category}</span>
-                    <span className="text-xs text-slate-500 font-mono font-medium">
-                      {section.items.length} dishes
-                    </span>
-                  </div>
-
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold text-slate-400 uppercase">
-                        <TableHead className="py-2.5 px-4 h-auto">DISH NAME</TableHead>
-                        <TableHead className="py-2.5 px-4 h-auto text-right">HALF PORTION (₹)</TableHead>
-                        <TableHead className="py-2.5 px-4 h-auto text-right">FULL PORTION (₹)</TableHead>
-                        <TableHead className="py-2.5 px-4 h-auto text-right">KITCHEN STATUS</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody className="divide-y divide-slate-100 text-xs">
-                      {section.items.map((dish, i) => (
-                        <TableRow key={i} className="hover:bg-slate-50/80 transition-colors">
-                          <TableCell className="py-3 px-4 font-semibold text-slate-900">
-                            {dish.name}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-right font-mono text-slate-700">
-                            {dish.halfPrice !== null ? `₹${dish.halfPrice}` : "—"}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                            ₹{dish.fullPrice}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-right">
-                            <span
-                              className={cn(
-                                "px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-block",
-                                dish.available !== false
-                                  ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                                  : "bg-rose-50 text-rose-600 border-rose-200"
-                              )}
-                            >
-                              {dish.available !== false ? "Available" : "Sold Out"}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+              {categories.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  No categories found in system database.
                 </div>
-              ))}
+              ) : (
+                categories.map((category) => {
+                  const categoryItems = menuItems.filter((i) => i.categoryId === category.id);
+
+                  return (
+                    <div key={category.id} className="space-y-3">
+                      <div className="flex items-center justify-between bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200/80">
+                        <span className="font-bold text-sm text-slate-900">{category.name}</span>
+                        <span className="text-xs text-slate-500 font-mono font-medium">
+                          {categoryItems.length} dishes
+                        </span>
+                      </div>
+
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold text-slate-400 uppercase">
+                            <TableHead className="py-2.5 px-4 h-auto">DISH NAME</TableHead>
+                            <TableHead className="py-2.5 px-4 h-auto">DIET</TableHead>
+                            <TableHead className="py-2.5 px-4 h-auto text-right">PORTION PRICE (₹)</TableHead>
+                            <TableHead className="py-2.5 px-4 h-auto text-right">KITCHEN STATUS</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody className="divide-y divide-slate-100 text-xs">
+                          {categoryItems.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center py-4 text-slate-400 text-xs">
+                                No dishes assigned to this category.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            categoryItems.map((dish) => (
+                              <TableRow key={dish.id} className="hover:bg-slate-50/80 transition-colors">
+                                <TableCell className="py-3 px-4 font-semibold text-slate-900">
+                                  {dish.name}
+                                </TableCell>
+                                <TableCell className="py-3 px-4">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded text-[10px] font-bold",
+                                    dish.isVeg ? "text-emerald-700 bg-emerald-50" : "text-rose-700 bg-rose-50"
+                                  )}>
+                                    {dish.isVeg ? "Veg" : "Non-Veg"}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                                  ₹{dish.price.toFixed(2)}
+                                </TableCell>
+                                <TableCell className="py-3 px-4 text-right">
+                                  <button
+                                    onClick={() => handleToggleAvailability(dish.id, dish.isAvailable)}
+                                    className={cn(
+                                      "px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-block cursor-pointer",
+                                      dish.isAvailable
+                                        ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                                        : "bg-rose-50 text-rose-600 border-rose-200"
+                                    )}
+                                  >
+                                    {dish.isAvailable ? "Available" : "Sold Out"}
+                                  </button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

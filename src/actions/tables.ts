@@ -26,23 +26,28 @@ const tableSchema = z.object({
  * Returns all tables for the active restaurant with their current status.
  */
 export async function listTables() {
-  await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = await getActiveRestaurantId();
+  try {
+    await requireRole(["owner", "admin", "staff"]);
+    const restaurantId = await getActiveRestaurantId();
 
-  return db.table.findMany({
-    where: { restaurantId },
-    orderBy: { tableNumber: "asc" },
-    include: {
-      orders: {
-        where: { status: { notIn: ["COMPLETED", "CANCELLED"] } },
-        take: 1,
+    return await db.table.findMany({
+      where: { restaurantId },
+      orderBy: { tableNumber: "asc" },
+      include: {
+        orders: {
+          where: { status: { notIn: ["COMPLETED", "CANCELLED"] } },
+          take: 1,
+        },
+        reservations: {
+          where: { status: { in: ["CONFIRMED", "PENDING"] } },
+          take: 1,
+        },
       },
-      reservations: {
-        where: { status: { in: ["CONFIRMED", "PENDING"] } },
-        take: 1,
-      },
-    },
-  });
+    });
+  } catch (error) {
+    console.error("Error in listTables action:", error);
+    return [];
+  }
 }
 
 /**
