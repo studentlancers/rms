@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -19,10 +19,16 @@ import {
   Eye,
   Plus,
   Tag,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  listDailySpecials,
+  getDailySpecialStats,
+} from "@/actions/specials";
 
-interface DailySpecialItem {
+interface DailySpecialUIItem {
   id: string;
   name: string;
   category: string;
@@ -32,60 +38,16 @@ interface DailySpecialItem {
   availableQty: string;
   chefRecommendation: "Must Try ⭐" | "Signature Dish" | "Seasonal Special";
   description: string;
+  rawRegularPrice?: number;
+  rawTodayPrice?: number;
+  isAvailable?: boolean;
 }
 
-const initialSpecials: DailySpecialItem[] = [
-  {
-    id: "SP-01",
-    name: "Truffle Infused Lobster Ravioli",
-    category: "Chef Special",
-    regularPrice: "₹850.00",
-    todayPrice: "₹690.00",
-    discount: "18% OFF",
-    availableQty: "8 portions left",
-    chefRecommendation: "Must Try ⭐",
-    description: "Handmade pasta stuffed with fresh lobster, finished with black truffle butter sauce.",
-  },
-  {
-    id: "SP-02",
-    name: "Slow-Cooked Dal Baluchi",
-    category: "Main Course",
-    regularPrice: "₹380.00",
-    todayPrice: "₹310.00",
-    discount: "18% OFF",
-    availableQty: "24 portions",
-    chefRecommendation: "Signature Dish",
-    description: "Black lentils simmered overnight over slow charcoal embers with organic white butter.",
-  },
-  {
-    id: "SP-03",
-    name: "Charcoal Grilled Tandoori Lamb Chops",
-    category: "Starters",
-    regularPrice: "₹650.00",
-    todayPrice: "₹540.00",
-    discount: "16% OFF",
-    availableQty: "5 portions left",
-    chefRecommendation: "Must Try ⭐",
-    description: "Tender lamb chops marinated in Kashmiri chili, hung curd, and roasted spices.",
-  },
-  {
-    id: "SP-04",
-    name: "Matcha & White Chocolate Mousse",
-    category: "Dessert",
-    regularPrice: "₹290.00",
-    todayPrice: "₹240.00",
-    discount: "17% OFF",
-    availableQty: "15 portions",
-    chefRecommendation: "Seasonal Special",
-    description: "Japanese ceremonial Uji matcha mousse layered with Belgian white chocolate ganache.",
-  },
-];
-
 export default function DailySpecialsPage() {
-  const [specials] = useState<DailySpecialItem[]>(initialSpecials);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
-  // Categories list state
+  // Dynamic Categories list state
   const [categories, setCategories] = useState<string[]>([
     "Chef Special",
     "Main Course",
@@ -94,12 +56,57 @@ export default function DailySpecialsPage() {
   ]);
 
   const [newCategoryInput, setNewCategoryInput] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-
-  const [selectedSpecial, setSelectedSpecial] = useState<DailySpecialItem | null>(null);
+  const [selectedSpecial, setSelectedSpecial] = useState<DailySpecialUIItem | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  // Add category handler
+  // Backend Telemetry State
+  const [specials, setSpecials] = useState<DailySpecialUIItem[]>([]);
+  const [stats, setStats] = useState({
+    totalSpecials: 0,
+    signatureCount: 0,
+    maxSavingsText: "0% OFF",
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load Daily Specials Data from Server Actions
+  const loadData = async (query = searchQuery, category = selectedCategory, silent = false) => {
+    try {
+      if (!silent) setIsLoading(true);
+      const [items, currentStats] = await Promise.all([
+        listDailySpecials(query, category),
+        getDailySpecialStats(),
+      ]);
+
+      setSpecials(items as DailySpecialUIItem[]);
+      setStats(currentStats);
+
+      // Dynamically extract category names from DB records
+      if (items && items.length > 0) {
+        const dbCategories = Array.from(new Set(items.map((i) => i.category)));
+        setCategories((prev) => Array.from(new Set([...prev, ...dbCategories])));
+      }
+    } catch (err: unknown) {
+      console.error("Error loading daily specials:", err);
+      if (!silent) {
+        toast.error("Failed to load daily specials data");
+      }
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData(searchQuery, selectedCategory);
+
+    // 5-second polling interval for live specials synchronization
+    const interval = setInterval(() => {
+      loadData(searchQuery, selectedCategory, true);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [searchQuery, selectedCategory]);
+
+  // Add category filter handler
   const handleAddCategory = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCategoryInput.trim()) return;
@@ -125,20 +132,17 @@ export default function DailySpecialsPage() {
     });
   }, [specials, searchQuery, selectedCategory]);
 
-  const totalSpecials = specials.length;
-  const signatureCount = specials.filter((s) => s.chefRecommendation === "Signature Dish" || s.chefRecommendation === "Must Try ⭐").length;
-
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="design-section-label mb-3">TODAY'S HIGHLIGHTS (VIEW ONLY)</div>
+          <div className="design-section-label mb-3">TODAY&apos;S HIGHLIGHTS (VIEW ONLY)</div>
           <h1 className="font-display text-3xl font-semibold tracking-tight text-slate-900">
-            Today's Specials
+            Today&apos;s Specials
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Browse today's available special menu items and chef recommendations.
+            Browse today&apos;s available special menu items and chef recommendations.
           </p>
         </div>
       </div>
@@ -147,19 +151,19 @@ export default function DailySpecialsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="TODAY'S SPECIAL DISHES"
-          value={`${totalSpecials} Dishes`}
+          value={isLoading ? "..." : `${stats.totalSpecials} Dishes`}
           subtext="featured by Executive Chef"
           trend={{ value: "↗ Chef's Selection", isPositive: true }}
         />
         <StatCard
           label="CHEF RECOMMENDATIONS"
-          value={`${signatureCount} Must Try`}
+          value={isLoading ? "..." : `${stats.signatureCount} Must Try`}
           subtext="signature recommendations"
           trend={{ value: "⭐ Top Seller", isPositive: true }}
         />
         <StatCard
           label="SPECIAL OFFER SAVINGS"
-          value="Up to 18% OFF"
+          value={isLoading ? "..." : stats.maxSavingsText}
           subtext="active shift discounts"
           trend={{ value: "↗ High Demand", isPositive: true }}
         />
@@ -240,7 +244,7 @@ export default function DailySpecialsPage() {
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DISH ITEM</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">CATEGORY</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">REGULAR</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TODAY'S PRICE</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TODAY&apos;S PRICE</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold hidden md:table-cell">DISCOUNT</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">AVAILABLE QTY</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold hidden lg:table-cell">RECOMMENDATION</TableHead>
@@ -248,7 +252,16 @@ export default function DailySpecialsPage() {
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-slate-100 text-xs">
-            {filteredSpecials.length === 0 ? (
+            {isLoading && specials.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                    <span>Loading daily specials...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : filteredSpecials.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
                   No daily specials found in this category.

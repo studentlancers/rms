@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { StatCard } from "@/components/ui/stat-card";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +13,15 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { Plus, Search, Download, Package, FolderPlus } from "lucide-react";
+import { Plus, Search, Download, Package, FolderPlus, Trash2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  listInventoryItems,
+  getInventoryStats,
+  createInventoryItem,
+  deleteInventoryItem,
+  exportInventoryCSV,
+} from "@/actions/inventory";
 
 export default function InventoryPage() {
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
@@ -34,52 +41,58 @@ export default function InventoryPage() {
   const [newItemName, setNewItemName] = useState("");
   const [newItemCategory, setNewItemCategory] = useState("Protein");
   const [newItemUnitCost, setNewItemUnitCost] = useState("");
-  const [newItemOnHand, setNewItemOnHand] = useState("10 kg");
+  const [newItemOnHand, setNewItemOnHand] = useState("10");
+  const [newItemUnit, setNewItemUnit] = useState("kg");
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [customCategoryName, setCustomCategoryName] = useState("");
 
-  const [inventoryItems, setInventoryItems] = useState([
-    {
-      name: "Atlantic salmon",
-      category: "Protein",
-      onHand: "3.2 kg",
-      unitCost: "₹24.00 / kg",
-      percentage: 18,
-      status: "Low",
-    },
-    {
-      name: "Burrata di Puglia",
-      category: "Dairy",
-      onHand: "8 portions",
-      unitCost: "₹4.80 / pc",
-      percentage: 32,
-      status: "Low",
-    },
-    {
-      name: "Domaine des Hâtes",
-      category: "Beverage",
-      onHand: "14 bottles",
-      unitCost: "₹28.00 / bt",
-      percentage: 69,
-      status: "Healthy",
-    },
-    {
-      name: "Heirloom tomatoes",
-      category: "Produce",
-      onHand: "12.5 kg",
-      unitCost: "₹6.20 / kg",
-      percentage: 76,
-      status: "Healthy",
-    },
-    {
-      name: "Sourdough flour",
-      category: "Dry goods",
-      onHand: "24 kg",
-      unitCost: "₹2.40 / kg",
-      percentage: 84,
-      status: "Healthy",
-    },
-  ]);
+  // Backend Telemetry State
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    totalValue: "₹0.00",
+    lowStockCount: "0",
+    foodCostPercentage: "28.4%",
+    totalItems: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Load Inventory Data from Server Actions
+  const loadData = async (silent = false) => {
+    try {
+      if (!silent) setIsLoading(true);
+      const [items, currentStats] = await Promise.all([
+        listInventoryItems(),
+        getInventoryStats(),
+      ]);
+
+      setInventoryItems(items || []);
+      setStats(currentStats);
+
+      // Dynamically extract categories from DB records
+      if (items && items.length > 0) {
+        const dbCategories = Array.from(new Set(items.map((i: any) => i.category)));
+        setCategories((prev) => Array.from(new Set([...prev, ...dbCategories])));
+      }
+    } catch (err: any) {
+      console.error("Error loading inventory:", err);
+      toast.error("Failed to load inventory data");
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+
+    // 5-second polling for live inventory updates
+    const interval = setInterval(() => {
+      loadData(true);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleAddCategory = () => {
     if (!customCategoryName.trim()) return;
@@ -92,37 +105,86 @@ export default function InventoryPage() {
     setIsCreatingCategory(false);
   };
 
-  const handleCreateItem = (e: React.FormEvent) => {
+  const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemName.trim()) return;
+    if (!newItemName.trim()) {
+      toast.error("Please provide an item name");
+      return;
+    }
 
-    const newItem = {
-      name: newItemName,
-      category: newItemCategory,
-      onHand: newItemOnHand || "10 units",
-      unitCost: newItemUnitCost || "₹10.00 / unit",
-      percentage: 80,
-      status: "Healthy",
-    };
+    // Parse numerical inputs
+    const qtyVal = parseFloat(newItemOnHand.replace(/[^0-9.]/g, "")) || 0;
+    const costVal = parseFloat(newItemUnitCost.replace(/[^0-9.]/g, "")) || 0;
 
-    setInventoryItems((prev) => [newItem, ...prev]);
-    setIsAddItemOpen(false);
-    setNewItemName("");
-    setNewItemUnitCost("");
+    setIsSubmitting(true);
+    try {
+      await createInventoryItem({
+        name: newItemName.trim(),
+        category: newItemCategory,
+        quantity: qtyVal,
+        unit: newItemUnit || "kg",
+        unitCost: costVal,
+        minReorderLevel: 10,
+      });
+
+      toast.success(`Inventory item "${newItemName}" added successfully!`);
+      setIsAddItemOpen(false);
+      setNewItemName("");
+      setNewItemUnitCost("");
+      setNewItemOnHand("10");
+
+      await loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create inventory item");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const lowStockCount = inventoryItems.filter(
-    (item) => item.status === "Low" || item.percentage <= 35
-  ).length;
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
 
-  const filteredItems = inventoryItems.filter((item) => {
-    const matchesSearch =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory =
-      selectedCategoryFilter === "All" || item.category === selectedCategoryFilter;
-    return matchesSearch && matchesCategory;
-  });
+    try {
+      await deleteInventoryItem(id);
+      toast.success(`Deleted "${name}"`);
+      await loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete item");
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setIsExporting(true);
+      const csvText = await exportInventoryCSV();
+
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `inventory_report_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success("Inventory CSV exported successfully!");
+    } catch (err: any) {
+      toast.error("Failed to export inventory CSV");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const filteredItems = useMemo(() => {
+    return inventoryItems.filter((item) => {
+      const matchesSearch =
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.category.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory =
+        selectedCategoryFilter === "All" || item.category === selectedCategoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [inventoryItems, searchQuery, selectedCategoryFilter]);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -151,18 +213,18 @@ export default function InventoryPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="INVENTORY VALUE"
-          value="₹28,460"
-          subtext="↗ 4.2% this month"
+          value={isLoading ? "..." : stats.totalValue}
+          subtext="live PostgreSQL database"
         />
         <StatCard
           label="LOW STOCK"
-          value={lowStockCount.toString()}
-          subtext="↘ Items below threshold"
+          value={isLoading ? "..." : stats.lowStockCount}
+          subtext="items below reorder threshold"
         />
         <StatCard
           label="FOOD COST THIS MONTH"
-          value="28.4%"
-          subtext="↗ 1.8% under target"
+          value={isLoading ? "..." : stats.foodCostPercentage}
+          subtext="target efficiency metric"
         />
       </div>
 
@@ -196,10 +258,11 @@ export default function InventoryPage() {
 
             <Button
               variant="outline"
-              onClick={() => alert("Exporting inventory CSV...")}
+              onClick={handleExportCSV}
+              disabled={isExporting}
               className="flex items-center gap-1.5 px-3.5 py-2 h-9 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 text-slate-500" />
+              {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5 text-slate-500" />}
               <span>Export</span>
             </Button>
           </div>
@@ -213,55 +276,84 @@ export default function InventoryPage() {
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STOCK</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">UNIT COST</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold w-48">STOCK LEVEL</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTION</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-slate-100 text-xs">
-            {filteredItems.map((item, idx) => (
-              <TableRow
-                key={idx}
-                className="hover:bg-slate-50/80 transition-colors border-slate-100 group"
-              >
-                <TableCell className="py-4 px-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200/60">
-                      <Package className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-slate-900">
-                        {item.name}
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {item.category}
-                      </div>
-                    </div>
-                  </div>
-                </TableCell>
-
-                <TableCell className="py-4 px-4 font-semibold text-slate-800">
-                  {item.onHand}
-                </TableCell>
-
-                <TableCell className="py-4 px-4 text-slate-600 font-mono">
-                  {item.unitCost}
-                </TableCell>
-
-                <TableCell className="py-4 px-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          item.percentage <= 35 ? "bg-orange-500" : "bg-blue-600"
-                        }`}
-                        style={{ width: `${item.percentage}%` }}
-                      />
-                    </div>
-                    <span className="text-[11px] font-mono text-slate-400 w-8">
-                      {item.percentage}%
-                    </span>
+            {isLoading && inventoryItems.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-slate-400 text-xs">
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                    <span>Loading inventory telemetry...</span>
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+            ) : filteredItems.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-slate-400 text-xs">
+                  No inventory items registered. Click &quot;Add item&quot; to create one.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredItems.map((item) => (
+                <TableRow
+                  key={item.id}
+                  className="hover:bg-slate-50/80 transition-colors border-slate-100 group"
+                >
+                  <TableCell className="py-4 px-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200/60">
+                        <Package className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-slate-900">
+                          {item.name}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {item.category}
+                        </div>
+                      </div>
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 font-semibold text-slate-800">
+                    {item.onHandFormatted || `${item.quantity} ${item.unit}`}
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-slate-600 font-mono">
+                    {item.unitCostFormatted || `₹${item.unitCost.toFixed(2)} / ${item.unit}`}
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            item.status === "Low" || item.percentage <= 35 ? "bg-orange-500" : "bg-blue-600"
+                          }`}
+                          style={{ width: `${Math.min(100, Math.max(15, item.percentage || 80))}%` }}
+                        />
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-400 w-8">
+                        {item.percentage || 80}%
+                      </span>
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(item.id, item.name)}
+                      className="h-8 px-2 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -276,7 +368,7 @@ export default function InventoryPage() {
         <form onSubmit={handleCreateItem} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Item Name
+              Item Name *
             </label>
             <Input
               type="text"
@@ -292,7 +384,7 @@ export default function InventoryPage() {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-700">
-                  Category
+                  Category *
                 </label>
                 <button
                   type="button"
@@ -338,11 +430,13 @@ export default function InventoryPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Unit Cost
+                Unit Cost (₹) *
               </label>
               <Input
-                type="text"
-                placeholder="e.g. ₹42.00 / kg"
+                type="number"
+                step="0.01"
+                required
+                placeholder="e.g. 42.00"
                 value={newItemUnitCost}
                 onChange={(e) => setNewItemUnitCost(e.target.value)}
                 className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
@@ -350,17 +444,39 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Quantity / Initial On Hand
-            </label>
-            <Input
-              type="text"
-              placeholder="e.g. 15.5 kg or 20 bottles"
-              value={newItemOnHand}
-              onChange={(e) => setNewItemOnHand(e.target.value)}
-              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Quantity / Initial On Hand *
+              </label>
+              <Input
+                type="number"
+                step="0.01"
+                required
+                placeholder="e.g. 15.5"
+                value={newItemOnHand}
+                onChange={(e) => setNewItemOnHand(e.target.value)}
+                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Unit *
+              </label>
+              <select
+                value={newItemUnit}
+                onChange={(e) => setNewItemUnit(e.target.value)}
+                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 bg-transparent"
+              >
+                <option value="kg">kg</option>
+                <option value="g">g</option>
+                <option value="portions">portions</option>
+                <option value="bottles">bottles</option>
+                <option value="pcs">pcs</option>
+                <option value="units">units</option>
+              </select>
+            </div>
           </div>
 
           <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
@@ -374,9 +490,10 @@ export default function InventoryPage() {
             </Button>
             <Button
               type="submit"
+              disabled={isSubmitting}
               className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-sm cursor-pointer border-none"
             >
-              Save Item
+              {isSubmitting ? "Saving..." : "Save Item"}
             </Button>
           </div>
         </form>
@@ -384,4 +501,3 @@ export default function InventoryPage() {
     </div>
   );
 }
-

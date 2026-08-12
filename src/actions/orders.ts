@@ -49,6 +49,7 @@ const createOrderSchema = z.object({
 
 /**
  * Creates a new order. Called by staff on behalf of a dine-in/phone/walk-in customer.
+ * Includes duplicate active DINE_IN order protection.
  */
 export async function createOrder(data: {
   orderType: OrderType;
@@ -84,6 +85,21 @@ export async function createOrder(data: {
       where: { id: tableId, restaurantId },
     });
     if (!table) throw new Error("Table not found");
+
+    if (orderType === "DINE_IN") {
+      const existingActiveOrder = await db.order.findFirst({
+        where: {
+          restaurantId,
+          tableId,
+          status: { notIn: ["COMPLETED", "CANCELLED"] },
+        },
+      });
+      if (existingActiveOrder) {
+        throw new Error(
+          `Table ${table.tableNumber} is already occupied by an active order (#ORD-${existingActiveOrder.id.slice(-4).toUpperCase()})`
+        );
+      }
+    }
   }
 
   const subtotal = items.reduce(
@@ -93,35 +109,36 @@ export async function createOrder(data: {
   const tax = parseFloat((subtotal * taxRate).toFixed(2));
   const total = parseFloat((subtotal + tax).toFixed(2));
 
-  const order = await db.order.create({
-    data: {
-      restaurantId,
-      tableId: tableId ?? null,
-      createdByUserId: ctx.userId,
-      orderType,
-      status: "PENDING",
-      items,
-      subtotal,
-      tax,
-      total,
-    },
-  });
-
-  // Mark the table as OCCUPIED if it's a dine-in order.
-  if (tableId && orderType === "DINE_IN") {
-    await db.table.update({
-      where: { id: tableId },
-      data: { status: "OCCUPIED" },
+  return await db.$transaction(async (tx) => {
+    const order = await tx.order.create({
+      data: {
+        restaurantId,
+        tableId: tableId ?? null,
+        createdByUserId: ctx.userId,
+        orderType,
+        status: "PENDING",
+        items,
+        subtotal,
+        tax,
+        total,
+      },
     });
-  }
 
-  revalidatePath("/dashboard", "layout");
-  return order;
+    if (tableId && orderType === "DINE_IN") {
+      await tx.table.update({
+        where: { id: tableId },
+        data: { status: "OCCUPIED" },
+      });
+    }
+
+    revalidatePath("/dashboard", "layout");
+    revalidatePath("/staff/tables");
+    return order;
+  });
 }
 
 /**
  * Returns all non-completed orders for the active restaurant.
- * Use short-interval polling or SSE on the client to keep this fresh.
  */
 export async function listLiveOrders() {
   const ctx = await requireRole(["owner", "admin", "staff"]);
@@ -172,6 +189,7 @@ export async function listOrders(filters?: {
 
 /**
  * Updates an order's status, enforcing the allowed transition matrix.
+ * Automatically releases table when the last active order on it completes or cancels.
  */
 export async function updateOrderStatus(
   orderId: string,
@@ -196,32 +214,34 @@ export async function updateOrderStatus(
     );
   }
 
-  const updated = await db.order.update({
-    where: { id: orderId },
-    data: { status: newStatus },
-  });
-
-  // If the order is completed or cancelled and it had a table, free the table.
-  if (
-    (newStatus === "COMPLETED" || newStatus === "CANCELLED") &&
-    order.tableId
-  ) {
-    // Only free the table if there are no other active orders on it.
-    const otherActiveOrders = await db.order.count({
-      where: {
-        tableId: order.tableId,
-        status: { notIn: ["COMPLETED", "CANCELLED"] },
-        id: { not: orderId },
-      },
+  return await db.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id: orderId },
+      data: { status: newStatus },
     });
-    if (otherActiveOrders === 0) {
-      await db.table.update({
-        where: { id: order.tableId },
-        data: { status: "FREE" },
-      });
-    }
-  }
 
-  revalidatePath("/dashboard", "layout");
-  return updated;
+    if (
+      (newStatus === "COMPLETED" || newStatus === "CANCELLED") &&
+      order.tableId
+    ) {
+      const otherActiveOrders = await tx.order.count({
+        where: {
+          tableId: order.tableId,
+          status: { notIn: ["COMPLETED", "CANCELLED"] },
+          id: { not: orderId },
+        },
+      });
+
+      if (otherActiveOrders === 0) {
+        await tx.table.update({
+          where: { id: order.tableId },
+          data: { status: "FREE" },
+        });
+      }
+    }
+
+    revalidatePath("/dashboard", "layout");
+    revalidatePath("/staff/tables");
+    return updated;
+  });
 }

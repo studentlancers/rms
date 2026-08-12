@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -14,15 +14,25 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { Plus, Search, Download, ShoppingBag } from "lucide-react";
+import { Plus, Search, Download, ShoppingBag, Trash2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  listExpenses,
+  getExpenseStats,
+  createExpense,
+  deleteExpense,
+  exportExpensesCSV,
+} from "@/actions/expenses";
 
-interface ExpenseItem {
+interface ExpenseItemUI {
   id: string;
   type: "Grocery";
-  name: string; // Product Name & Weight
+  name: string;
+  productName?: string;
   amount: string;
+  rawAmount?: number;
   date: string;
-  status: "Paid" | "Pending";
+  status: "Paid" | "Pending" | "Cancelled";
   weight?: string;
   unit?: string;
   supplier?: string;
@@ -33,75 +43,150 @@ export default function ExpensesPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Grocery form state
-  const [productName, setProductName] = useState("Prime Beef Striploin");
-  const [weight, setWeight] = useState("25");
+  const [productName, setProductName] = useState("");
+  const [weight, setWeight] = useState("");
   const [unit, setUnit] = useState("kg");
-  const [groceryCost, setGroceryCost] = useState("₹620.00");
-  const [supplier, setSupplier] = useState("Wagyu Direct Ltd.");
-  const [purchaseDate, setPurchaseDate] = useState("2024-02-05");
+  const [groceryCost, setGroceryCost] = useState("");
+  const [supplier, setSupplier] = useState("");
+  const [purchaseDate, setPurchaseDate] = useState("");
 
-  const [expenses, setExpenses] = useState<ExpenseItem[]>([
-    {
-      id: "EXP-101",
-      type: "Grocery",
-      name: "Prime Beef Striploin (25 kg)",
-      amount: "₹620.00",
-      date: "Feb 02, 2024",
-      status: "Paid",
-      supplier: "Wagyu Direct Ltd.",
-    },
-    {
-      id: "EXP-102",
-      type: "Grocery",
-      name: "Atlantic Salmon (15.5 kg)",
-      amount: "₹372.00",
-      date: "Feb 04, 2024",
-      status: "Paid",
-      supplier: "OceanCatch Co.",
-    },
-    {
-      id: "EXP-103",
-      type: "Grocery",
-      name: "Organic Heirloom Tomatoes (30 kg)",
-      amount: "₹186.00",
-      date: "Feb 06, 2024",
-      status: "Pending",
-      supplier: "GreenValley Farms",
-    },
-    {
-      id: "EXP-104",
-      type: "Grocery",
-      name: "Burrata & Speciality Cheese (12 kg)",
-      amount: "₹290.00",
-      date: "Feb 08, 2024",
-      status: "Paid",
-      supplier: "Puglia Imports",
-    },
-  ]);
+  // Backend Telemetry State
+  const [expenses, setExpenses] = useState<ExpenseItemUI[]>([]);
+  const [stats, setStats] = useState({
+    totalGroceryCost: "₹0.00",
+    groceryOrdersCount: "0 Purchases",
+    activeSuppliersCount: "0 Vendors",
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const handleCreateExpense = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Load Expenses Data from Server Actions
+  const loadData = async (query = searchQuery, silent = false) => {
+    try {
+      if (!silent) setIsLoading(true);
+      const [items, currentStats] = await Promise.all([
+        listExpenses(query),
+        getExpenseStats(),
+      ]);
 
-    const newExp: ExpenseItem = {
-      id: `EXP-${Date.now().toString().slice(-3)}`,
-      type: "Grocery",
-      name: `${productName} (${weight} ${unit})`,
-      amount: groceryCost,
-      date: purchaseDate,
-      status: "Paid",
-      weight,
-      unit,
-      supplier,
-    };
-    setExpenses((prev) => [newExp, ...prev]);
-    setIsAddExpenseOpen(false);
+      setExpenses(items);
+      setStats(currentStats);
+    } catch (err: unknown) {
+      console.error("Error loading expenses data:", err);
+      if (!silent) {
+        toast.error("Failed to load expense records");
+      }
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
   };
 
-  const filteredExpenses = expenses.filter(
-    (exp) =>
-      exp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (exp.supplier && exp.supplier.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  useEffect(() => {
+    loadData(searchQuery);
+
+    // 5-second polling interval for live expense synchronization
+    const interval = setInterval(() => {
+      loadData(searchQuery, true);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [searchQuery]);
+
+  const handleCreateExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!productName.trim()) {
+      toast.error("Please provide a product name");
+      return;
+    }
+
+    const numericCost = parseFloat(groceryCost.replace(/[^0-9.]/g, "")) || 0;
+    if (numericCost <= 0) {
+      toast.error("Please enter a valid expense cost");
+      return;
+    }
+
+    const numericWeight = weight ? parseFloat(weight) : undefined;
+
+    setIsSubmitting(true);
+    try {
+      await createExpense({
+        productName: productName.trim(),
+        amount: numericCost,
+        weight: numericWeight,
+        unit: unit || "kg",
+        supplier: supplier.trim() || undefined,
+        purchaseDate: purchaseDate || undefined,
+        status: "PAID",
+      });
+
+      toast.success(`Expense for "${productName}" recorded successfully!`);
+      setIsAddExpenseOpen(false);
+
+      // Reset form
+      setProductName("");
+      setWeight("");
+      setGroceryCost("");
+      setSupplier("");
+      setPurchaseDate("");
+
+      await loadData();
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to record expense";
+      toast.error(errorMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete expense "${name}"?`)) return;
+
+    setDeletingId(id);
+    try {
+      await deleteExpense(id);
+      toast.success(`Deleted expense "${name}"`);
+      await loadData();
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to delete expense";
+      toast.error(errorMessage);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setIsExporting(true);
+      const csvText = await exportExpensesCSV();
+
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `grocery_expenses_report_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success("Grocery expenses log exported successfully!");
+    } catch (err: unknown) {
+      console.error("Export error:", err);
+      toast.error("Failed to export expenses CSV");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(
+      (exp) =>
+        exp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (exp.supplier && exp.supplier.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [expenses, searchQuery]);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -132,18 +217,18 @@ export default function ExpensesPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="TOTAL GROCERY COST"
-          value="₹1,468.00"
-          subtext="↘ 3.1% under budget"
+          value={isLoading ? "..." : stats.totalGroceryCost}
+          subtext="live PostgreSQL database"
         />
         <StatCard
           label="GROCERY ORDERS"
-          value={`${expenses.length} Purchases`}
-          subtext="↗ All verified"
+          value={isLoading ? "..." : stats.groceryOrdersCount}
+          subtext="all verified purchases"
         />
         <StatCard
           label="ACTIVE SUPPLIERS"
-          value="4 Vendors"
-          subtext="↗ Wagyu, OceanCatch..."
+          value={isLoading ? "..." : stats.activeSuppliersCount}
+          subtext="active vendor accounts"
         />
       </div>
 
@@ -163,10 +248,11 @@ export default function ExpensesPage() {
 
           <Button
             variant="outline"
-            onClick={() => alert("Exporting grocery expenses log...")}
+            onClick={handleExportCSV}
+            disabled={isExporting}
             className="flex items-center gap-1.5 px-3.5 py-2 h-9 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer self-start sm:self-auto"
           >
-            <Download className="w-3.5 h-3.5 text-slate-500" />
+            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5 text-slate-500" />}
             <span>Export Expenses</span>
           </Button>
         </div>
@@ -180,37 +266,67 @@ export default function ExpensesPage() {
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">AMOUNT</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DATE</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STATUS</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTION</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-slate-100 text-xs">
-            {filteredExpenses.map((item) => (
-              <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
-                <TableCell className="py-4 px-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200/60 shrink-0">
-                      <ShoppingBag className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="font-semibold text-slate-900">{item.name}</div>
+            {isLoading && expenses.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                    <span>Loading expense records...</span>
                   </div>
                 </TableCell>
-
-                <TableCell className="py-4 px-4 text-slate-600">
-                  {item.supplier || "N/A"}
-                </TableCell>
-
-                <TableCell className="py-4 px-4 font-mono font-bold text-slate-900">
-                  {item.amount}
-                </TableCell>
-
-                <TableCell className="py-4 px-4 text-slate-500 font-mono">
-                  {item.date}
-                </TableCell>
-
-                <TableCell className="py-4 px-4">
-                  <StatusBadge status={item.status} />
+              </TableRow>
+            ) : filteredExpenses.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                  No grocery expenses recorded. Click &quot;Add Grocery Expense&quot; to log one.
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              filteredExpenses.map((item) => (
+                <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
+                  <TableCell className="py-4 px-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200/60 shrink-0">
+                        <ShoppingBag className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="font-semibold text-slate-900">{item.name}</div>
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-slate-600">
+                    {item.supplier || "N/A"}
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 font-mono font-bold text-slate-900">
+                    {item.amount}
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-slate-500 font-mono">
+                    {item.date}
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4">
+                    <StatusBadge status={item.status} />
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={deletingId === item.id}
+                      onClick={() => handleDelete(item.id, item.name)}
+                      className="h-8 px-2 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                    >
+                      {deletingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -225,7 +341,7 @@ export default function ExpensesPage() {
         <form onSubmit={handleCreateExpense} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Product Name
+              Product Name *
             </label>
             <Input
               type="text"
@@ -243,7 +359,8 @@ export default function ExpensesPage() {
                 Weight
               </label>
               <Input
-                type="text"
+                type="number"
+                step="0.01"
                 placeholder="e.g. 25"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
@@ -258,7 +375,7 @@ export default function ExpensesPage() {
               <select
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 bg-transparent"
+                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 bg-transparent cursor-pointer"
               >
                 <option value="kg">kg</option>
                 <option value="g">g</option>
@@ -270,12 +387,13 @@ export default function ExpensesPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Cost
+                Cost (₹) *
               </label>
               <Input
-                type="text"
+                type="number"
+                step="0.01"
                 required
-                placeholder="e.g. ₹620.00"
+                placeholder="e.g. 620.00"
                 value={groceryCost}
                 onChange={(e) => setGroceryCost(e.target.value)}
                 className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
@@ -315,15 +433,16 @@ export default function ExpensesPage() {
               type="button"
               variant="ghost"
               onClick={() => setIsAddExpenseOpen(false)}
-              className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
             >
               Cancel
             </Button>
             <Button
               type="submit"
+              disabled={isSubmitting}
               className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-sm cursor-pointer border-none"
             >
-              Save Expense
+              {isSubmitting ? "Saving..." : "Save Expense"}
             </Button>
           </div>
         </form>
@@ -331,4 +450,3 @@ export default function ExpensesPage() {
     </div>
   );
 }
-

@@ -1,12 +1,12 @@
 "use server";
 
 // src/actions/reservations.ts
-// Server Actions for reservation management.
+// Server Actions for reservation management with atomic table state transitions.
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireRole, getRestaurantContext, getActiveRestaurantId } from "@/lib/require-role";
+import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 import type { ReservationStatus } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +67,7 @@ export async function createReservation(formData: FormData) {
   });
 
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/tables");
   return reservation;
 }
 
@@ -94,7 +95,7 @@ export async function listReservations(date?: Date) {
 }
 
 /**
- * Confirms a reservation and assigns a table.
+ * Confirms a reservation and assigns a table. Atomically marks table as RESERVED.
  */
 export async function confirmReservation(
   reservationId: string,
@@ -108,29 +109,32 @@ export async function confirmReservation(
   });
   if (!reservation) throw new Error("Reservation not found");
 
-  // Validate the table belongs to this restaurant.
   const table = await db.table.findFirst({
     where: { id: tableId, restaurantId },
   });
   if (!table) throw new Error("Table not found");
 
-  const updated = await db.reservation.update({
-    where: { id: reservationId },
-    data: { status: "CONFIRMED", tableId },
-  });
+  return await db.$transaction(async (tx) => {
+    const updated = await tx.reservation.update({
+      where: { id: reservationId },
+      data: { status: "CONFIRMED", tableId },
+    });
 
-  // Mark the table as RESERVED.
-  await db.table.update({
-    where: { id: tableId },
-    data: { status: "RESERVED" },
-  });
+    await tx.table.update({
+      where: { id: tableId },
+      data: { status: "RESERVED" },
+    });
 
-  revalidatePath("/dashboard", "layout");
-  return updated;
+    revalidatePath("/dashboard", "layout");
+    revalidatePath("/staff/tables");
+    return updated;
+  });
 }
 
 /**
- * Updates the status of a reservation.
+ * Updates the status of a reservation atomically with related Table status side-effects.
+ * - SEATED -> Table.status = OCCUPIED
+ * - CANCELLED / NO_SHOW -> Table.status = FREE
  */
 export async function updateReservationStatus(
   reservationId: string,
@@ -144,22 +148,28 @@ export async function updateReservationStatus(
   });
   if (!reservation) throw new Error("Reservation not found");
 
-  const updated = await db.reservation.update({
-    where: { id: reservationId },
-    data: { status },
-  });
-
-  // If the guest was seated or cancelled/no-show, free the table.
-  if (
-    (status === "CANCELLED" || status === "NO_SHOW") &&
-    reservation.tableId
-  ) {
-    await db.table.update({
-      where: { id: reservation.tableId },
-      data: { status: "FREE" },
+  return await db.$transaction(async (tx) => {
+    const updated = await tx.reservation.update({
+      where: { id: reservationId },
+      data: { status },
     });
-  }
 
-  revalidatePath("/dashboard", "layout");
-  return updated;
+    if (reservation.tableId) {
+      if (status === "SEATED") {
+        await tx.table.update({
+          where: { id: reservation.tableId },
+          data: { status: "OCCUPIED" },
+        });
+      } else if (status === "CANCELLED" || status === "NO_SHOW") {
+        await tx.table.update({
+          where: { id: reservation.tableId },
+          data: { status: "FREE" },
+        });
+      }
+    }
+
+    revalidatePath("/dashboard", "layout");
+    revalidatePath("/staff/tables");
+    return updated;
+  });
 }
