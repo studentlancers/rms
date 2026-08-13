@@ -147,7 +147,7 @@ export async function createInventoryItem(data: {
 
   const { name, category, quantity, unit, unitCost, minReorderLevel, supplierId } = parsed.data;
 
-  // Atomic database transaction: Create item + initial stock movement entry
+  // Atomic database transaction: Create item + initial stock movement entry + Expense entry
   const newItem = await db.$transaction(async (tx) => {
     const item = await tx.inventoryItem.create({
       data: {
@@ -173,6 +173,43 @@ export async function createInventoryItem(data: {
           createdById: ctx.userId,
         },
       });
+
+      const totalCost = quantity * unitCost;
+      if (totalCost > 0) {
+        let supplierName: string | null = null;
+        if (item.supplierId) {
+          const sup = await tx.supplier.findUnique({ where: { id: item.supplierId } });
+          supplierName = sup?.name || null;
+        }
+
+        try {
+          await tx.expense.create({
+            data: {
+              restaurantId,
+              type: "INVENTORY",
+              name,
+              productName: name,
+              weight: quantity,
+              unit,
+              amount: totalCost,
+              date: new Date(),
+              status: "PAID",
+              supplierId: item.supplierId || null,
+              supplierName,
+              inventoryItemId: item.id,
+              createdById: ctx.userId,
+            },
+          });
+        } catch {
+          // Safe fallback for running server processes with cached Prisma Client schema
+          const expId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const now = new Date();
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "Expense" ("id", "restaurantId", "type", "name", "productName", "weight", "unit", "amount", "date", "status", "supplierId", "supplierName", "inventoryItemId", "createdById", "createdAt", "updatedAt") VALUES ($1, $2, 'INVENTORY'::"ExpenseType", $3, $4, $5, $6, $7, $8, 'PAID'::"ExpenseStatus", $9, $10, $11, $12, $13, $14)`,
+            expId, restaurantId, name, name, quantity, unit, totalCost, now, item.supplierId || null, supplierName, item.id, ctx.userId, now, now
+          );
+        }
+      }
     }
 
     return item;
@@ -210,7 +247,7 @@ export async function adjustStock(data: {
 
   const quantityChange = newQuantity - existing.quantity;
 
-  // Atomic database transaction: Update quantity + log StockMovement
+  // Atomic database transaction: Update quantity + log StockMovement + log Expense if PURCHASE
   const updatedItem = await db.$transaction(async (tx) => {
     const item = await tx.inventoryItem.update({
       where: { id: inventoryItemId },
@@ -227,6 +264,43 @@ export async function adjustStock(data: {
         createdById: ctx.userId,
       },
     });
+
+    if (type === "PURCHASE" && quantityChange > 0 && existing.unitCost > 0) {
+      const purchaseAmount = quantityChange * existing.unitCost;
+      let supplierName: string | null = null;
+      if (existing.supplierId) {
+        const sup = await tx.supplier.findUnique({ where: { id: existing.supplierId } });
+        supplierName = sup?.name || null;
+      }
+
+      try {
+        await tx.expense.create({
+          data: {
+            restaurantId,
+            type: "INVENTORY",
+            name: existing.name,
+            productName: existing.name,
+            weight: quantityChange,
+            unit: existing.unit,
+            amount: purchaseAmount,
+            date: new Date(),
+            status: "PAID",
+            supplierId: existing.supplierId || null,
+            supplierName,
+            inventoryItemId: existing.id,
+            createdById: ctx.userId,
+          },
+        });
+      } catch {
+        // Safe fallback for running server processes with cached Prisma Client schema
+        const expId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const now = new Date();
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "Expense" ("id", "restaurantId", "type", "name", "productName", "weight", "unit", "amount", "date", "status", "supplierId", "supplierName", "inventoryItemId", "createdById", "createdAt", "updatedAt") VALUES ($1, $2, 'INVENTORY'::"ExpenseType", $3, $4, $5, $6, $7, $8, 'PAID'::"ExpenseStatus", $9, $10, $11, $12, $13, $14)`,
+          expId, restaurantId, existing.name, existing.name, quantityChange, existing.unit, purchaseAmount, now, existing.supplierId || null, supplierName, existing.id, ctx.userId, now, now
+        );
+      }
+    }
 
     return item;
   });

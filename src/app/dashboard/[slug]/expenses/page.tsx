@@ -14,7 +14,7 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { Plus, Search, Download, ShoppingBag, Trash2, Loader2 } from "lucide-react";
+import { Plus, Search, Download, ShoppingBag, Receipt, Trash2, Loader2, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import {
   listExpenses,
@@ -22,12 +22,14 @@ import {
   createExpense,
   deleteExpense,
   exportExpensesCSV,
+  getRestaurantStaff,
 } from "@/actions/expenses";
 
 interface ExpenseItemUI {
   id: string;
-  type: "Grocery";
+  type: "GENERAL" | "INVENTORY";
   name: string;
+  description?: string;
   productName?: string;
   amount: string;
   rawAmount?: number;
@@ -36,31 +38,55 @@ interface ExpenseItemUI {
   weight?: string;
   unit?: string;
   supplier?: string;
+  staff?: string;
+  staffUserId?: string;
+}
+
+interface StaffOption {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 export default function ExpensesPage() {
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Grocery form state
-  const [productName, setProductName] = useState("");
-  const [weight, setWeight] = useState("");
-  const [unit, setUnit] = useState("kg");
-  const [groceryCost, setGroceryCost] = useState("");
-  const [supplier, setSupplier] = useState("");
+  // General Expense form state
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [staffUserId, setStaffUserId] = useState("");
+  const [amount, setAmount] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
+
+  // Staff options state
+  const [staffList, setStaffList] = useState<StaffOption[]>([]);
 
   // Backend Telemetry State
   const [expenses, setExpenses] = useState<ExpenseItemUI[]>([]);
   const [stats, setStats] = useState({
     totalGroceryCost: "₹0.00",
-    groceryOrdersCount: "0 Purchases",
+    groceryOrdersCount: "0 Records",
     activeSuppliersCount: "0 Vendors",
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Load Staff List
+  useEffect(() => {
+    async function loadStaff() {
+      try {
+        const staff = await getRestaurantStaff();
+        setStaffList(staff);
+      } catch (err) {
+        console.error("Failed to load staff members:", err);
+      }
+    }
+    loadStaff();
+  }, []);
 
   // Load Expenses Data from Server Actions
   const loadData = async (query = searchQuery, silent = false) => {
@@ -97,39 +123,36 @@ export default function ExpensesPage() {
   const handleCreateExpense = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!productName.trim()) {
-      toast.error("Please provide a product name");
+    if (!name.trim()) {
+      toast.error("Please provide an expense name");
       return;
     }
 
-    const numericCost = parseFloat(groceryCost.replace(/[^0-9.]/g, "")) || 0;
+    const numericCost = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
     if (numericCost <= 0) {
       toast.error("Please enter a valid expense cost");
       return;
     }
 
-    const numericWeight = weight ? parseFloat(weight) : undefined;
-
     setIsSubmitting(true);
     try {
       await createExpense({
-        productName: productName.trim(),
+        name: name.trim(),
+        description: description.trim() || undefined,
+        staffUserId: staffUserId || undefined,
         amount: numericCost,
-        weight: numericWeight,
-        unit: unit || "kg",
-        supplier: supplier.trim() || undefined,
         purchaseDate: purchaseDate || undefined,
         status: "PAID",
       });
 
-      toast.success(`Expense for "${productName}" recorded successfully!`);
+      toast.success(`General expense "${name}" recorded successfully!`);
       setIsAddExpenseOpen(false);
 
       // Reset form
-      setProductName("");
-      setWeight("");
-      setGroceryCost("");
-      setSupplier("");
+      setName("");
+      setDescription("");
+      setStaffUserId("");
+      setAmount("");
       setPurchaseDate("");
 
       await loadData();
@@ -166,12 +189,12 @@ export default function ExpensesPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `grocery_expenses_report_${new Date().toISOString().slice(0, 10)}.csv`);
+      link.setAttribute("download", `expenses_report_${new Date().toISOString().slice(0, 10)}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      toast.success("Grocery expenses log exported successfully!");
+      toast.success("Expenses log exported successfully!");
     } catch (err: unknown) {
       console.error("Export error:", err);
       toast.error("Failed to export expenses CSV");
@@ -184,7 +207,9 @@ export default function ExpensesPage() {
     return expenses.filter(
       (exp) =>
         exp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (exp.supplier && exp.supplier.toLowerCase().includes(searchQuery.toLowerCase()))
+        (exp.description && exp.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (exp.supplier && exp.supplier.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (exp.staff && exp.staff.toLowerCase().includes(searchQuery.toLowerCase()))
     );
   }, [expenses, searchQuery]);
 
@@ -200,7 +225,7 @@ export default function ExpensesPage() {
             Expenses
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Track operational raw products and grocery purchases for your kitchen.
+            Track general operational expenses and inventory stock purchases for your restaurant.
           </p>
         </div>
 
@@ -209,21 +234,21 @@ export default function ExpensesPage() {
           className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer h-auto border-none"
         >
           <Plus className="w-4 h-4" />
-          <span>Add Grocery Expense</span>
+          <span>General Expense</span>
         </Button>
       </div>
 
       {/* Top Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
-          label="TOTAL GROCERY COST"
+          label="TOTAL EXPENSES"
           value={isLoading ? "..." : stats.totalGroceryCost}
-          subtext="live PostgreSQL database"
+          subtext="general & inventory expenses"
         />
         <StatCard
-          label="GROCERY ORDERS"
+          label="EXPENSE RECORDS"
           value={isLoading ? "..." : stats.groceryOrdersCount}
-          subtext="all verified purchases"
+          subtext="all logged transactions"
         />
         <StatCard
           label="ACTIVE SUPPLIERS"
@@ -239,7 +264,7 @@ export default function ExpensesPage() {
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
             <Input
               type="text"
-              placeholder="Search grocery expenses..."
+              placeholder="Search expenses (name, description, staff, supplier)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2 h-9 bg-slate-50 border-slate-200/80 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-600/20"
@@ -261,8 +286,10 @@ export default function ExpensesPage() {
         <Table>
           <TableHeader>
             <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">RAW PRODUCT / DESCRIPTION</TableHead>
-              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">SUPPLIER</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TYPE</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">NAME</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DESCRIPTION / SUPPLIER</TableHead>
+              <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STAFF TAG</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">AMOUNT</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DATE</TableHead>
               <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STATUS</TableHead>
@@ -272,7 +299,7 @@ export default function ExpensesPage() {
           <TableBody className="divide-y divide-slate-100 text-xs">
             {isLoading && expenses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
                   <div className="flex items-center justify-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                     <span>Loading expense records...</span>
@@ -281,24 +308,51 @@ export default function ExpensesPage() {
               </TableRow>
             ) : filteredExpenses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
-                  No grocery expenses recorded. Click &quot;Add Grocery Expense&quot; to log one.
+                <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
+                  No expense records found. Click &quot;General Expense&quot; to log a new expense.
                 </TableCell>
               </TableRow>
             ) : (
               filteredExpenses.map((item) => (
                 <TableRow key={item.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
                   <TableCell className="py-4 px-4">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold uppercase ${
+                        item.type === "INVENTORY"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                          : "bg-blue-50 text-blue-700 border border-blue-200/60"
+                      }`}
+                    >
+                      {item.type}
+                    </span>
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200/60 shrink-0">
-                        <ShoppingBag className="w-3.5 h-3.5" />
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 ${
+                        item.type === "INVENTORY" 
+                          ? "bg-emerald-50 text-emerald-600 border-emerald-200/60" 
+                          : "bg-blue-50 text-blue-600 border-blue-200/60"
+                      }`}>
+                        {item.type === "INVENTORY" ? <ShoppingBag className="w-3.5 h-3.5" /> : <Receipt className="w-3.5 h-3.5" />}
                       </div>
                       <div className="font-semibold text-slate-900">{item.name}</div>
                     </div>
                   </TableCell>
 
                   <TableCell className="py-4 px-4 text-slate-600">
-                    {item.supplier || "N/A"}
+                    {item.description || item.supplier || "N/A"}
+                  </TableCell>
+
+                  <TableCell className="py-4 px-4 text-slate-600">
+                    {item.staff && item.staff !== "N/A" ? (
+                      <div className="flex items-center gap-1.5">
+                        <UserCheck className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{item.staff}</span>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </TableCell>
 
                   <TableCell className="py-4 px-4 font-mono font-bold text-slate-900">
@@ -331,101 +385,86 @@ export default function ExpensesPage() {
         </Table>
       </div>
 
-      {/* Modal: Add Grocery Expense */}
+      {/* Modal: General Expense Form */}
       <Modal
         isOpen={isAddExpenseOpen}
         onClose={() => setIsAddExpenseOpen(false)}
-        title="Record Grocery Expense"
-        subtitle="Fill in raw product details, weight, cost, and supplier."
+        title="General Expense"
+        subtitle="Log an operational general expense for your restaurant."
       >
         <form onSubmit={handleCreateExpense} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Product Name *
+              Name *
             </label>
             <Input
               type="text"
               required
-              placeholder="e.g. Wagyu Ribeye"
-              value={productName}
-              onChange={(e) => setProductName(e.target.value)}
+              placeholder="e.g. Electricity Bill, Kitchen Repairs"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Weight
-              </label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="e.g. 25"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Unit
-              </label>
-              <select
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 bg-transparent cursor-pointer"
-              >
-                <option value="kg">kg</option>
-                <option value="g">g</option>
-                <option value="lbs">lbs</option>
-                <option value="pcs">pcs</option>
-                <option value="bt">bt</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Cost (₹) *
-              </label>
-              <Input
-                type="number"
-                step="0.01"
-                required
-                placeholder="e.g. 620.00"
-                value={groceryCost}
-                onChange={(e) => setGroceryCost(e.target.value)}
-                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Description
+            </label>
+            <Input
+              type="text"
+              placeholder="e.g. Monthly utility bill payment"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Supplier (Optional)
+                Staff Tag
               </label>
-              <Input
-                type="text"
-                placeholder="e.g. Wagyu Direct Ltd."
-                value={supplier}
-                onChange={(e) => setSupplier(e.target.value)}
-                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
-              />
+              <select
+                value={staffUserId}
+                onChange={(e) => setStaffUserId(e.target.value)}
+                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/20 bg-white cursor-pointer text-slate-900"
+              >
+                <option value="">Select Staff Member</option>
+                {staffList.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.name} ({staff.role})
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Purchase Date
+                Amount (₹) *
               </label>
               <Input
-                type="date"
-                value={purchaseDate}
-                onChange={(e) => setPurchaseDate(e.target.value)}
+                type="number"
+                step="0.01"
+                required
+                placeholder="e.g. 2500.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
                 className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Date
+            </label>
+            <Input
+              type="date"
+              value={purchaseDate}
+              onChange={(e) => setPurchaseDate(e.target.value)}
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-sm focus-visible:ring-2 focus-visible:ring-blue-600/20"
+            />
           </div>
 
           <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">

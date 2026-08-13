@@ -22,6 +22,7 @@ model User {
   invitations   Invitation[]
   members       Member[]
   sessions      Session[]
+  expenses      Expense[]    @relation("ExpenseStaffUser")
 
   @@map("user")
 }
@@ -264,6 +265,11 @@ enum MovementType {
   WASTAGE
 }
 
+enum ExpenseType {
+  GENERAL
+  INVENTORY
+}
+
 enum ExpenseStatus {
   PAID
   PENDING
@@ -299,6 +305,7 @@ model InventoryItem {
   updatedAt       DateTime        @updatedAt
   supplier        Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   stockMovements  StockMovement[]
+  expenses        Expense[]
 
   @@index([restaurantId])
   @@index([restaurantId, category])
@@ -320,25 +327,32 @@ model StockMovement {
 }
 
 model Expense {
-  id           String        @id @default(cuid())
-  restaurantId String
-  name         String
-  productName  String
-  weight       Float?
-  unit         String?
-  amount       Float
-  date         DateTime      @default(now())
-  status       ExpenseStatus @default(PAID)
-  supplierId   String?
-  supplierName String?
-  createdById  String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  supplier     Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  id              String        @id @default(cuid())
+  restaurantId    String
+  type            ExpenseType   @default(GENERAL)
+  name            String
+  description     String?
+  staffUserId     String?
+  productName     String?
+  weight          Float?
+  unit            String?
+  amount          Float
+  date            DateTime      @default(now())
+  status          ExpenseStatus @default(PAID)
+  supplierId      String?
+  supplierName    String?
+  inventoryItemId String?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  supplier        Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  staffUser       User?         @relation("ExpenseStaffUser", fields: [staffUserId], references: [id], onDelete: SetNull)
 
   @@index([restaurantId])
   @@index([restaurantId, date])
   @@index([restaurantId, status])
+  @@index([restaurantId, type])
 }
 
 model DailySpecial {

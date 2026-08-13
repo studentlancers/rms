@@ -8,6 +8,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
+
+export type ExpenseType = "GENERAL" | "INVENTORY";
 export type ExpenseStatus = "PAID" | "PENDING" | "CANCELLED";
 
 // ---------------------------------------------------------------------------
@@ -15,11 +17,10 @@ export type ExpenseStatus = "PAID" | "PENDING" | "CANCELLED";
 // ---------------------------------------------------------------------------
 
 const createExpenseSchema = z.object({
-  productName: z.string().min(1, "Product name is required"),
+  name: z.string().min(1, "Expense name is required"),
+  description: z.string().optional(),
+  staffUserId: z.string().optional(),
   amount: z.coerce.number().positive("Amount must be a positive number"),
-  weight: z.coerce.number().optional(),
-  unit: z.string().optional(),
-  supplier: z.string().optional(),
   purchaseDate: z.coerce.date().optional(),
   status: z.enum(["PAID", "PENDING", "CANCELLED"]).default("PAID"),
 });
@@ -42,8 +43,43 @@ function getExpenseModel(): any | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns list of expenses for the calling user's active restaurant.
- * Order by date descending. Supports search on productName, name, or supplierName.
+ * Returns list of staff members belonging to the active restaurant.
+ * Used for Staff Tag dropdown selection in General Expenses form.
+ */
+export async function getRestaurantStaff() {
+  try {
+    await requireRole(["owner", "admin", "staff"]);
+    const restaurantId = await getActiveRestaurantId();
+
+    const members = await db.member.findMany({
+      where: { organizationId: restaurantId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return members.map((m) => ({
+      id: m.userId,
+      name: m.user.name || m.user.email || "Staff Member",
+      email: m.user.email,
+      role: m.role,
+    }));
+  } catch (error) {
+    console.error("Error in getRestaurantStaff:", error);
+    return [];
+  }
+}
+
+/**
+ * Returns list of expenses (both GENERAL and INVENTORY) for the active restaurant.
+ * Order by date descending. Supports search on name, description, productName, supplierName, and staff name.
  */
 export async function listExpenses(searchQuery?: string) {
   try {
@@ -56,44 +92,86 @@ export async function listExpenses(searchQuery?: string) {
     let rawExpenses: Array<any> = [];
 
     if (ExpenseModel) {
-      rawExpenses = await ExpenseModel.findMany({
-        where: {
-          restaurantId,
-          ...(query
-            ? {
-                OR: [
-                  { productName: { contains: query, mode: "insensitive" } },
-                  { name: { contains: query, mode: "insensitive" } },
-                  { supplierName: { contains: query, mode: "insensitive" } },
-                ],
-              }
-            : {}),
-        },
-        orderBy: { date: "desc" },
-        include: {
-          supplier: true,
-        },
-      });
+      try {
+        rawExpenses = await ExpenseModel.findMany({
+          where: {
+            restaurantId,
+            ...(query
+              ? {
+                  OR: [
+                    { name: { contains: query, mode: "insensitive" } },
+                    { description: { contains: query, mode: "insensitive" } },
+                    { productName: { contains: query, mode: "insensitive" } },
+                    { supplierName: { contains: query, mode: "insensitive" } },
+                    { staffUser: { name: { contains: query, mode: "insensitive" } } },
+                  ],
+                }
+              : {}),
+          },
+          orderBy: { date: "desc" },
+          include: {
+            supplier: true,
+            staffUser: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+        });
+      } catch {
+        // Fallback SQL query if Prisma Client delegate has stale runtime schema metadata
+        if (query) {
+          rawExpenses = await db.$queryRaw`
+            SELECT e.*, s.name as "supplier_name", u.name as "staff_name"
+            FROM "Expense" e
+            LEFT JOIN "Supplier" s ON e."supplierId" = s.id
+            LEFT JOIN "user" u ON e."staffUserId" = u.id
+            WHERE e."restaurantId" = ${restaurantId}
+              AND (
+                LOWER(e.name) LIKE ${`%${query}%`} OR
+                LOWER(COALESCE(e.description, '')) LIKE ${`%${query}%`} OR
+                LOWER(COALESCE(e."productName", '')) LIKE ${`%${query}%`} OR
+                LOWER(COALESCE(e."supplierName", '')) LIKE ${`%${query}%`} OR
+                LOWER(COALESCE(u.name, '')) LIKE ${`%${query}%`}
+              )
+            ORDER BY e.date DESC
+          `;
+        } else {
+          rawExpenses = await db.$queryRaw`
+            SELECT e.*, s.name as "supplier_name", u.name as "staff_name"
+            FROM "Expense" e
+            LEFT JOIN "Supplier" s ON e."supplierId" = s.id
+            LEFT JOIN "user" u ON e."staffUserId" = u.id
+            WHERE e."restaurantId" = ${restaurantId}
+            ORDER BY e.date DESC
+          `;
+        }
+      }
     } else {
-      // Fallback SQL query if Prisma Client delegate is not bound in running process
       if (query) {
         rawExpenses = await db.$queryRaw`
-          SELECT e.*, s.name as "supplier_name"
+          SELECT e.*, s.name as "supplier_name", u.name as "staff_name"
           FROM "Expense" e
           LEFT JOIN "Supplier" s ON e."supplierId" = s.id
+          LEFT JOIN "user" u ON e."staffUserId" = u.id
           WHERE e."restaurantId" = ${restaurantId}
             AND (
-              LOWER(e."productName") LIKE ${`%${query}%`} OR
               LOWER(e.name) LIKE ${`%${query}%`} OR
-              LOWER(e."supplierName") LIKE ${`%${query}%`}
+              LOWER(COALESCE(e.description, '')) LIKE ${`%${query}%`} OR
+              LOWER(COALESCE(e."productName", '')) LIKE ${`%${query}%`} OR
+              LOWER(COALESCE(e."supplierName", '')) LIKE ${`%${query}%`} OR
+              LOWER(COALESCE(u.name, '')) LIKE ${`%${query}%`}
             )
           ORDER BY e.date DESC
         `;
       } else {
         rawExpenses = await db.$queryRaw`
-          SELECT e.*, s.name as "supplier_name"
+          SELECT e.*, s.name as "supplier_name", u.name as "staff_name"
           FROM "Expense" e
           LEFT JOIN "Supplier" s ON e."supplierId" = s.id
+          LEFT JOIN "user" u ON e."staffUserId" = u.id
           WHERE e."restaurantId" = ${restaurantId}
           ORDER BY e.date DESC
         `;
@@ -116,11 +194,15 @@ export async function listExpenses(searchQuery?: string) {
         year: "numeric",
       });
 
+      const expenseType: "GENERAL" | "INVENTORY" = exp.type === "INVENTORY" ? "INVENTORY" : "GENERAL";
+      const staffName = exp.staffUser?.name || exp.staff_name || "N/A";
+
       return {
         id: exp.id,
-        type: "Grocery" as const,
+        type: expenseType,
         name: exp.name,
-        productName: exp.productName,
+        description: exp.description || exp.productName || "",
+        productName: exp.productName ?? undefined,
         weight: exp.weight?.toString(),
         unit: exp.unit ?? undefined,
         amount: `₹${Number(exp.amount || 0).toFixed(2)}`,
@@ -130,6 +212,9 @@ export async function listExpenses(searchQuery?: string) {
         status: formattedStatus,
         supplier: exp.supplierName || exp.supplier_name || exp.supplier?.name || "N/A",
         supplierId: exp.supplierId ?? undefined,
+        staff: staffName,
+        staffUserId: exp.staffUserId ?? undefined,
+        inventoryItemId: exp.inventoryItemId ?? undefined,
       };
     });
   } catch (error) {
@@ -140,9 +225,7 @@ export async function listExpenses(searchQuery?: string) {
 
 /**
  * Returns aggregate statistics for summary cards:
- * - Total Grocery Cost (sum of amounts)
- * - Grocery Orders Count
- * - Active Suppliers Count (unique non-null suppliers)
+ * Sums both GENERAL and INVENTORY expenses.
  */
 export async function getExpenseStats() {
   try {
@@ -153,14 +236,22 @@ export async function getExpenseStats() {
     let rawExpenses: Array<{ amount: number; supplierName?: string; supplierId?: string; supplier_name?: string }> = [];
 
     if (ExpenseModel) {
-      rawExpenses = await ExpenseModel.findMany({
-        where: { restaurantId },
-        select: {
-          amount: true,
-          supplierName: true,
-          supplierId: true,
-        },
-      });
+      try {
+        rawExpenses = await ExpenseModel.findMany({
+          where: { restaurantId },
+          select: {
+            amount: true,
+            supplierName: true,
+            supplierId: true,
+          },
+        });
+      } catch {
+        rawExpenses = await db.$queryRaw`
+          SELECT "amount", "supplierName", "supplierId"
+          FROM "Expense"
+          WHERE "restaurantId" = ${restaurantId}
+        `;
+      }
     } else {
       rawExpenses = await db.$queryRaw`
         SELECT "amount", "supplierName", "supplierId"
@@ -182,29 +273,28 @@ export async function getExpenseStats() {
 
     return {
       totalGroceryCost: `₹${totalCost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      groceryOrdersCount: `${rawExpenses.length} Purchases`,
+      groceryOrdersCount: `${rawExpenses.length} Records`,
       activeSuppliersCount: `${uniqueSuppliers.size} Vendors`,
     };
   } catch (error) {
     console.error("Error in getExpenseStats:", error);
     return {
       totalGroceryCost: "₹0.00",
-      groceryOrdersCount: "0 Purchases",
+      groceryOrdersCount: "0 Records",
       activeSuppliersCount: "0 Vendors",
     };
   }
 }
 
 /**
- * Records a new grocery expense. Owner and Admin only.
- * Handles supplier creation and links expense record.
+ * Creates a new General Expense. Owner and Admin only.
+ * Validates staff tag belongs to active restaurant tenant.
  */
 export async function createExpense(data: {
-  productName: string;
+  name: string;
+  description?: string;
+  staffUserId?: string;
   amount: number | string;
-  weight?: number | string;
-  unit?: string;
-  supplier?: string;
   purchaseDate?: string;
   status?: ExpenseStatus;
 }) {
@@ -221,96 +311,78 @@ export async function createExpense(data: {
       throw new Error(parsed.error.issues[0].message);
     }
 
-    const { productName, amount, weight, unit, supplier: supplierInput, purchaseDate, status } = parsed.data;
+    const { name, description, staffUserId, amount, purchaseDate, status } = parsed.data;
 
-    const formattedName =
-      weight && unit
-        ? `${productName} (${weight} ${unit})`
-        : weight
-        ? `${productName} (${weight})`
-        : productName;
+    let validStaffUserId: string | null = null;
+    if (staffUserId && staffUserId.trim() !== "") {
+      const member = await db.member.findFirst({
+        where: {
+          organizationId: restaurantId,
+          userId: staffUserId.trim(),
+        },
+      });
 
-    const supplierNameTrimmed = supplierInput?.trim() || null;
-
-    let linkedSupplierId: string | null = null;
-
-    if (supplierNameTrimmed) {
-      try {
-        const existingSupplier = await db.supplier.findFirst({
-          where: {
-            restaurantId,
-            name: { equals: supplierNameTrimmed, mode: "insensitive" },
-          },
-        });
-
-        if (existingSupplier) {
-          linkedSupplierId = existingSupplier.id;
-        } else {
-          const createdSupplier = await db.supplier.create({
-            data: {
-              restaurantId,
-              name: supplierNameTrimmed,
-            },
-          });
-          linkedSupplierId = createdSupplier.id;
-        }
-      } catch {
-        // Fallback SQL for Supplier creation if needed
-        const supRows: Array<{ id: string }> = await db.$queryRaw`
-          SELECT id FROM "Supplier"
-          WHERE "restaurantId" = ${restaurantId} AND LOWER(name) = ${supplierNameTrimmed.toLowerCase()}
-          LIMIT 1
-        `;
-
-        if (supRows && supRows.length > 0) {
-          linkedSupplierId = supRows[0].id;
-        } else {
-          const newSupId = `sup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-          const now = new Date();
-          await db.$executeRawUnsafe(
-            `INSERT INTO "Supplier" ("id", "restaurantId", "name", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5)`,
-            newSupId, restaurantId, supplierNameTrimmed, now, now
-          );
-          linkedSupplierId = newSupId;
-        }
+      if (!member) {
+        throw new Error("Selected staff member does not belong to this active restaurant");
       }
+      validStaffUserId = member.userId;
     }
 
     const ExpenseModel = getExpenseModel();
     let createdExpense: any = null;
 
     if (ExpenseModel) {
-      createdExpense = await ExpenseModel.create({
-        data: {
-          restaurantId,
-          productName,
-          name: formattedName,
-          weight: weight ?? null,
-          unit: unit ?? null,
+      try {
+        createdExpense = await ExpenseModel.create({
+          data: {
+            restaurantId,
+            type: "GENERAL",
+            name,
+            description: description?.trim() || null,
+            staffUserId: validStaffUserId,
+            amount,
+            date: purchaseDate ?? new Date(),
+            status: status ?? "PAID",
+            createdById: ctx.userId,
+          },
+        });
+      } catch {
+        const expId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const now = new Date();
+        const dateVal = purchaseDate ?? now;
+        const statusVal = status ?? "PAID";
+
+        await db.$executeRawUnsafe(
+          `INSERT INTO "Expense" ("id", "restaurantId", "type", "name", "description", "staffUserId", "amount", "date", "status", "createdById", "createdAt", "updatedAt") VALUES ($1, $2, 'GENERAL'::"ExpenseType", $3, $4, $5, $6, $7, $8::"ExpenseStatus", $9, $10, $11)`,
+          expId, restaurantId, name, description?.trim() || null, validStaffUserId, amount, dateVal, statusVal, ctx.userId, now, now
+        );
+
+        createdExpense = {
+          id: expId,
+          type: "GENERAL",
+          name,
+          description,
           amount,
-          date: purchaseDate ?? new Date(),
-          status: status ?? "PAID",
-          supplierId: linkedSupplierId,
-          supplierName: supplierNameTrimmed,
-          createdById: ctx.userId,
-        },
-      });
+          date: dateVal,
+          status: statusVal,
+        };
+      }
     } else {
-      // Fallback SQL insert using valid unsafe parameterized query
       const expId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       const now = new Date();
       const dateVal = purchaseDate ?? now;
       const statusVal = status ?? "PAID";
 
       await db.$executeRawUnsafe(
-        `INSERT INTO "Expense" ("id", "restaurantId", "productName", "name", "weight", "unit", "amount", "date", "status", "supplierId", "supplierName", "createdById", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::"ExpenseStatus", $10, $11, $12, $13, $14)`,
-        expId, restaurantId, productName, formattedName, weight ?? null, unit ?? null, amount, dateVal, statusVal, linkedSupplierId, supplierNameTrimmed, ctx.userId, now, now
+        `INSERT INTO "Expense" ("id", "restaurantId", "type", "name", "description", "staffUserId", "amount", "date", "status", "createdById", "createdAt", "updatedAt") VALUES ($1, $2, 'GENERAL'::"ExpenseType", $3, $4, $5, $6, $7, $8::"ExpenseStatus", $9, $10, $11)`,
+        expId, restaurantId, name, description?.trim() || null, validStaffUserId, amount, dateVal, statusVal, ctx.userId, now, now
       );
 
       createdExpense = {
         id: expId,
-        name: formattedName,
-        productName,
+        type: "GENERAL",
+        name,
+        description,
         amount,
         date: dateVal,
         status: statusVal,
@@ -327,6 +399,7 @@ export async function createExpense(data: {
 
 /**
  * Deletes an expense record. Owner and Admin only.
+ * If expense is an INVENTORY expense linked to an InventoryItem, deleting the item handles deletion consistently.
  */
 export async function deleteExpense(expenseId: string) {
   try {
@@ -336,17 +409,30 @@ export async function deleteExpense(expenseId: string) {
     const ExpenseModel = getExpenseModel();
 
     if (ExpenseModel) {
-      const existing = await ExpenseModel.findFirst({
-        where: { id: expenseId, restaurantId },
-      });
+      try {
+        const existing = await ExpenseModel.findFirst({
+          where: { id: expenseId, restaurantId },
+        });
 
-      if (!existing) {
-        throw new Error("Expense not found or unauthorized");
+        if (!existing) {
+          throw new Error("Expense not found or unauthorized");
+        }
+
+        if (existing.type === "INVENTORY" && existing.inventoryItemId) {
+          await db.inventoryItem.delete({
+            where: { id: existing.inventoryItemId },
+          });
+        } else {
+          await ExpenseModel.delete({
+            where: { id: expenseId },
+          });
+        }
+      } catch {
+        await db.$executeRawUnsafe(
+          `DELETE FROM "Expense" WHERE "id" = $1 AND "restaurantId" = $2`,
+          expenseId, restaurantId
+        );
       }
-
-      await ExpenseModel.delete({
-        where: { id: expenseId },
-      });
     } else {
       await db.$executeRawUnsafe(
         `DELETE FROM "Expense" WHERE "id" = $1 AND "restaurantId" = $2`,
@@ -363,7 +449,7 @@ export async function deleteExpense(expenseId: string) {
 }
 
 /**
- * Generates and returns CSV string data for exporting expense logs.
+ * Generates and returns CSV string data for exporting expense logs (GENERAL and INVENTORY).
  */
 export async function exportExpensesCSV() {
   try {
@@ -374,26 +460,54 @@ export async function exportExpensesCSV() {
     let expenses: Array<any> = [];
 
     if (ExpenseModel) {
-      expenses = await ExpenseModel.findMany({
-        where: { restaurantId },
-        orderBy: { date: "desc" },
-        include: { supplier: true },
-      });
+      try {
+        expenses = await ExpenseModel.findMany({
+          where: { restaurantId },
+          orderBy: { date: "desc" },
+          include: {
+            supplier: true,
+            staffUser: { select: { name: true, email: true } },
+          },
+        });
+      } catch {
+        expenses = await db.$queryRaw`
+          SELECT e.*, s.name as "supplier_name", u.name as "staff_name"
+          FROM "Expense" e
+          LEFT JOIN "Supplier" s ON e."supplierId" = s.id
+          LEFT JOIN "user" u ON e."staffUserId" = u.id
+          WHERE e."restaurantId" = ${restaurantId}
+          ORDER BY e.date DESC
+        `;
+      }
     } else {
       expenses = await db.$queryRaw`
-        SELECT e.*, s.name as "supplier_name"
+        SELECT e.*, s.name as "supplier_name", u.name as "staff_name"
         FROM "Expense" e
         LEFT JOIN "Supplier" s ON e."supplierId" = s.id
+        LEFT JOIN "user" u ON e."staffUserId" = u.id
         WHERE e."restaurantId" = ${restaurantId}
         ORDER BY e.date DESC
       `;
     }
 
-    const headers = ["Expense ID", "Product Name", "Full Description", "Supplier", "Amount (INR)", "Date", "Status"];
+    const headers = [
+      "Expense ID",
+      "Type",
+      "Name",
+      "Description / Product",
+      "Staff Tag",
+      "Supplier",
+      "Amount (INR)",
+      "Date",
+      "Status",
+    ];
+
     const rows = expenses.map((exp) => [
       `"${exp.id}"`,
-      `"${(exp.productName || "").replace(/"/g, '""')}"`,
+      `"${exp.type || "GENERAL"}"`,
       `"${(exp.name || "").replace(/"/g, '""')}"`,
+      `"${(exp.description || exp.productName || "").replace(/"/g, '""')}"`,
+      `"${(exp.staffUser?.name || exp.staff_name || "N/A").replace(/"/g, '""')}"`,
       `"${(exp.supplierName || exp.supplier_name || exp.supplier?.name || "N/A").replace(/"/g, '""')}"`,
       Number(exp.amount || 0).toFixed(2),
       exp.date ? new Date(exp.date).toISOString().slice(0, 10) : "",
