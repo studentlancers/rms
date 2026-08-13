@@ -1,18 +1,10 @@
-// prisma/schema.prisma
-// Full Prisma Schema for HMS: Better Auth tables + Domain models
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  // Connection URL is in prisma.config.ts (Prisma 7 requirement)
 }
-
-// ===========================================================================
-// Better Auth Core Tables
-// ===========================================================================
 
 model User {
   id            String       @id
@@ -26,10 +18,11 @@ model User {
   banned        Boolean?     @default(false)
   banReason     String?
   banExpires    DateTime?
-  sessions      Session[]
   accounts      Account[]
-  members       Member[]
   invitations   Invitation[]
+  members       Member[]
+  sessions      Session[]
+  expenses      Expense[]    @relation("ExpenseStaffUser")
 
   @@map("user")
 }
@@ -43,8 +36,8 @@ model Session {
   ipAddress            String?
   userAgent            String?
   userId               String
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganizationId String?
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("session")
 }
@@ -54,7 +47,6 @@ model Account {
   accountId             String
   providerId            String
   userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?
   refreshToken          String?
   idToken               String?
@@ -64,6 +56,7 @@ model Account {
   password              String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("account")
 }
@@ -86,8 +79,8 @@ model Organization {
   logo        String?
   metadata    String?
   createdAt   DateTime     @default(now())
-  members     Member[]
   invitations Invitation[]
+  members     Member[]
 
   @@map("organization")
 }
@@ -95,11 +88,11 @@ model Organization {
 model Member {
   id             String       @id
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   role           String
   createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("member")
 }
@@ -107,29 +100,21 @@ model Member {
 model Invitation {
   id             String       @id
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email          String
   role           String?
   status         String
   expiresAt      DateTime
   inviterId      String
-  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@map("invitation")
 }
 
-// ===========================================================================
-// HMS Domain Models
-// ===========================================================================
-
-// ---------------------------------------------------------------------------
-// Menu
-// ---------------------------------------------------------------------------
-
 model Category {
   id           String     @id @default(cuid())
-  restaurantId String     // Better Auth organizationId
+  restaurantId String
   name         String
   sortOrder    Int        @default(0)
   menuItems    MenuItem[]
@@ -138,29 +123,26 @@ model Category {
 }
 
 model MenuItem {
-  id           String   @id @default(cuid())
-  restaurantId String   // Better Auth organizationId
+  id           String         @id @default(cuid())
+  restaurantId String
   categoryId   String
-  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   name         String
   description  String?
   price        Float
-  isVeg        Boolean  @default(false)
-  isAvailable  Boolean  @default(true)
+  isVeg        Boolean        @default(false)
+  isAvailable  Boolean        @default(true)
   /// JSON array of { name: string, priceModifier: number }
   variants     Json?
+  category     Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  dailySpecials DailySpecial[]
 
   @@index([restaurantId])
   @@index([categoryId])
 }
 
-// ---------------------------------------------------------------------------
-// Tables & Reservations
-// ---------------------------------------------------------------------------
-
 model Table {
   id           String        @id @default(cuid())
-  restaurantId String        // Better Auth organizationId
+  restaurantId String
   tableNumber  String
   capacity     Int
   status       TableStatus   @default(FREE)
@@ -170,48 +152,29 @@ model Table {
   @@index([restaurantId])
 }
 
-enum TableStatus {
-  FREE
-  OCCUPIED
-  RESERVED
-}
-
 model Reservation {
   id              String            @id @default(cuid())
-  restaurantId    String            // Better Auth organizationId
+  restaurantId    String
   customerName    String
   customerPhone   String
   partySize       Int
   reservationTime DateTime
   tableId         String?
-  table           Table?            @relation(fields: [tableId], references: [id])
   status          ReservationStatus @default(PENDING)
   /// Better Auth user id of the staff member who logged this reservation
   takenByUserId   String
   notes           String?
   createdAt       DateTime          @default(now())
+  table           Table?            @relation(fields: [tableId], references: [id])
 
   @@index([restaurantId])
   @@index([restaurantId, reservationTime])
 }
 
-enum ReservationStatus {
-  PENDING
-  CONFIRMED
-  SEATED
-  CANCELLED
-  NO_SHOW
-}
-
-// ---------------------------------------------------------------------------
-// Orders
-// ---------------------------------------------------------------------------
-
 model Order {
   id                String        @id @default(cuid())
-  restaurantId      String        // Better Auth organizationId
+  restaurantId      String
   tableId           String?
-  table             Table?        @relation(fields: [tableId], references: [id])
   /// Better Auth user id — orders are entered by staff, not customers
   createdByUserId   String
   orderType         OrderType
@@ -227,10 +190,41 @@ model Order {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   delivery          Delivery?
+  table             Table?        @relation(fields: [tableId], references: [id])
 
   @@index([restaurantId])
   @@index([restaurantId, status])
   @@index([tableId])
+}
+
+model Delivery {
+  id           String         @id @default(cuid())
+  restaurantId String
+  orderId      String         @unique
+  /// Better Auth user id of the staff member acting as rider
+  riderUserId  String
+  status       DeliveryStatus @default(ASSIGNED)
+  etaMinutes   Int?
+  createdAt    DateTime       @default(now())
+  deliveredAt  DateTime?
+  order        Order          @relation(fields: [orderId], references: [id])
+
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+}
+
+enum TableStatus {
+  FREE
+  OCCUPIED
+  RESERVED
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  CANCELLED
+  NO_SHOW
 }
 
 enum OrderType {
@@ -256,29 +250,132 @@ enum PaymentStatus {
   REFUNDED
 }
 
-// ---------------------------------------------------------------------------
-// Delivery
-// ---------------------------------------------------------------------------
-
-model Delivery {
-  id           String         @id @default(cuid())
-  restaurantId String         // Better Auth organizationId
-  orderId      String         @unique
-  order        Order          @relation(fields: [orderId], references: [id])
-  /// Better Auth user id of the staff member acting as rider
-  riderUserId  String
-  status       DeliveryStatus @default(ASSIGNED)
-  etaMinutes   Int?
-  createdAt    DateTime       @default(now())
-  deliveredAt  DateTime?
-
-  @@index([restaurantId])
-  @@index([restaurantId, status])
-}
-
 enum DeliveryStatus {
   ASSIGNED
   IN_TRANSIT
   NEARBY
   DELIVERED
 }
+
+enum MovementType {
+  OPENING_STOCK
+  PURCHASE
+  USAGE
+  ADJUSTMENT
+  WASTAGE
+}
+
+enum ExpenseType {
+  GENERAL
+  INVENTORY
+}
+
+enum ExpenseStatus {
+  PAID
+  PENDING
+  CANCELLED
+}
+
+model Supplier {
+  id             String          @id @default(cuid())
+  restaurantId   String
+  name           String
+  contactName    String?
+  email          String?
+  phone          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  inventoryItems InventoryItem[]
+  expenses       Expense[]
+
+  @@index([restaurantId])
+}
+
+model InventoryItem {
+  id              String          @id @default(cuid())
+  restaurantId    String
+  name            String
+  category        String
+  quantity        Float           @default(0)
+  unit            String          @default("unit")
+  unitCost        Float           @default(0)
+  minReorderLevel Float           @default(10)
+  supplierId      String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  supplier        Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  stockMovements  StockMovement[]
+  expenses        Expense[]
+
+  @@index([restaurantId])
+  @@index([restaurantId, category])
+}
+
+model StockMovement {
+  id              String        @id @default(cuid())
+  restaurantId    String
+  inventoryItemId String
+  quantityChange  Float
+  type            MovementType
+  reason          String?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@index([inventoryItemId])
+}
+
+model Expense {
+  id              String        @id @default(cuid())
+  restaurantId    String
+  type            ExpenseType   @default(GENERAL)
+  name            String
+  description     String?
+  staffUserId     String?
+  productName     String?
+  weight          Float?
+  unit            String?
+  amount          Float
+  date            DateTime      @default(now())
+  status          ExpenseStatus @default(PAID)
+  supplierId      String?
+  supplierName    String?
+  inventoryItemId String?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  supplier        Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  staffUser       User?         @relation("ExpenseStaffUser", fields: [staffUserId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId])
+  @@index([restaurantId, date])
+  @@index([restaurantId, status])
+  @@index([restaurantId, type])
+}
+
+model DailySpecial {
+  id                 String    @id @default(cuid())
+  restaurantId       String
+  menuItemId         String?
+  name               String
+  category           String
+  regularPrice       Float
+  todayPrice         Float
+  discount           String?
+  availableQty       String    @default("Available")
+  chefRecommendation String    @default("Must Try ⭐")
+  description        String
+  isAvailable        Boolean   @default(true)
+  date               DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  menuItem           MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId])
+  @@index([restaurantId, date])
+}
+
+
+

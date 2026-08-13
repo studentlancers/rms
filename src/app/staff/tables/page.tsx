@@ -30,21 +30,26 @@ import {
   Receipt,
   CheckCircle2,
   ArrowRightLeft,
-  Eye,
   Loader2,
   Plus,
+  TableProperties,
 } from "lucide-react";
 import { toast } from "sonner";
-import { listTables, updateTableStatus } from "@/actions/tables";
+import { listTables, createTable, updateTableStatus, transferTable } from "@/actions/tables";
 
 export default function StaffTablesPage() {
   const [tables, setTables] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("All");
 
   // Modals state
+  const [isAddTableModalOpen, setIsAddTableModalOpen] = useState(false);
+  const [newTableNumber, setNewTableNumber] = useState("");
+  const [newTableCapacity, setNewTableCapacity] = useState("4");
+
   const [selectedTable, setSelectedTable] = useState<any | null>(null);
   const [isOpenOrderModal, setIsOpenOrderModal] = useState(false);
   const [isMoveTableModal, setIsMoveTableModal] = useState(false);
@@ -78,6 +83,38 @@ export default function StaffTablesPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Handle Add Table Form Submission
+  const handleAddTableSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTableNumber.trim()) {
+      toast.error("Please enter a table number");
+      return;
+    }
+    if (!newTableCapacity || parseInt(newTableCapacity, 10) <= 0) {
+      toast.error("Please enter a valid seat capacity");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("tableNumber", newTableNumber.trim());
+      formData.append("capacity", newTableCapacity);
+
+      await createTable(formData);
+      toast.success(`Table ${newTableNumber.trim()} added successfully!`);
+
+      setIsAddTableModalOpen(false);
+      setNewTableNumber("");
+      setNewTableCapacity("4");
+      await loadTablesData(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add table");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // UI Status Mapper
   const getUiStatus = (dbStatus: string) => {
     switch (dbStatus) {
@@ -108,7 +145,6 @@ export default function StaffTablesPage() {
   // Handle Mark Available Action
   const handleMarkAvailable = async (tableId: string) => {
     try {
-      // Optimistic UI Update
       setTables((prev) =>
         prev.map((t) => (t.id === tableId ? { ...t, status: "FREE" } : t))
       );
@@ -127,13 +163,12 @@ export default function StaffTablesPage() {
     if (!selectedTable || !targetTableId) return;
 
     try {
-      // Free current table and occupy target table
-      await updateTableStatus(selectedTable.id, "FREE");
-      await updateTableStatus(targetTableId, "OCCUPIED");
+      await transferTable(selectedTable.id, targetTableId);
 
       toast.success(`Transferred Table ${selectedTable.tableNumber} to target table`);
       setIsMoveTableModal(false);
       setSelectedTable(null);
+      setTargetTableId("");
       await loadTablesData(true);
     } catch (err: any) {
       toast.error(err.message || "Failed to transfer table");
@@ -160,6 +195,17 @@ export default function StaffTablesPage() {
             Real-time table status, seating assignments, and action menu.
           </p>
         </div>
+
+        <Button
+          onClick={() => {
+            setNewTableNumber(tables.length > 0 ? `${tables.length + 1}` : "1");
+            setIsAddTableModalOpen(true);
+          }}
+          className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer h-auto border-none self-start md:self-auto"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Add New Table</span>
+        </Button>
       </div>
 
       {/* Stat Cards */}
@@ -186,7 +232,6 @@ export default function StaffTablesPage() {
 
       {/* Status Filter Pills & Search */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        {/* Status Filter Pills */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           {statusFilters.map((st) => (
             <button
@@ -203,7 +248,6 @@ export default function StaffTablesPage() {
           ))}
         </div>
 
-        {/* Search Bar */}
         <div className="relative min-w-[220px]">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <Input
@@ -223,7 +267,7 @@ export default function StaffTablesPage() {
         </div>
       )}
 
-      {/* Restaurant Tables Data Table */}
+      {/* Empty State / Restaurant Tables Data Table */}
       {!isLoading && (
         <div className="overflow-hidden border border-slate-200/80 rounded-2xl bg-white shadow-xs">
           <Table>
@@ -240,8 +284,27 @@ export default function StaffTablesPage() {
             <TableBody>
               {filteredTables.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
-                    No matching tables found.
+                  <TableCell colSpan={6} className="text-center py-12 text-slate-400 text-xs">
+                    {tables.length === 0 ? (
+                      <div className="space-y-3">
+                        <TableProperties className="w-10 h-10 text-slate-300 mx-auto" />
+                        <p className="font-semibold text-slate-800 text-sm">No Dining Tables Configured</p>
+                        <p className="text-slate-500 max-w-sm mx-auto">
+                          Your restaurant floor map is empty. Click &quot;Add New Table&quot; to configure dining tables.
+                        </p>
+                        <Button
+                          onClick={() => {
+                            setNewTableNumber("1");
+                            setIsAddTableModalOpen(true);
+                          }}
+                          className="mt-2 text-xs bg-blue-600 text-white rounded-xl"
+                        >
+                          <Plus className="w-4 h-4 mr-1" /> Add First Table
+                        </Button>
+                      </div>
+                    ) : (
+                      "No matching tables found."
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -329,6 +392,69 @@ export default function StaffTablesPage() {
           </Table>
         </div>
       )}
+
+      {/* Modal: Add New Table */}
+      <Modal
+        isOpen={isAddTableModalOpen}
+        onClose={() => setIsAddTableModalOpen(false)}
+        title="Add New Dining Table"
+        subtitle="Configure table number and seating capacity for your restaurant floor."
+      >
+        <form onSubmit={handleAddTableSubmit} className="space-y-4 py-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Table Number / ID *
+            </label>
+            <Input
+              type="text"
+              required
+              value={newTableNumber}
+              onChange={(e) => setNewTableNumber(e.target.value)}
+              placeholder="e.g. 1, 2, T-101, Patio-4"
+              className="w-full px-3.5 py-2 h-10 text-xs rounded-xl"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Seating Capacity (Guests) *
+            </label>
+            <Input
+              type="number"
+              min="1"
+              max="30"
+              required
+              value={newTableCapacity}
+              onChange={(e) => setNewTableCapacity(e.target.value)}
+              className="w-full px-3.5 py-2 h-10 text-xs rounded-xl font-mono"
+            />
+          </div>
+
+          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsAddTableModalOpen(false)}
+              className="px-4 py-2 h-9 text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none cursor-pointer"
+            >
+              {isSubmitting ? (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Adding...
+                </span>
+              ) : (
+                "Add Table"
+              )}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Open Order Modal */}
       {selectedTable && isOpenOrderModal && (

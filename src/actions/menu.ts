@@ -1,7 +1,7 @@
 "use server";
 
 // src/actions/menu.ts
-// Server Actions for menu categories and items.
+// Server Actions for menu categories and items with Daily Specials synchronization.
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -34,6 +34,112 @@ const menuItemSchema = z.object({
     .optional(),
 });
 
+// Helper check for special variant
+function checkIsSpecialVariant(variants?: any[]): boolean {
+  if (!variants || !Array.isArray(variants)) return false;
+  return variants.some((v: any) => v && (v.name === "special" || v.isSpecial === true));
+}
+
+// Atomic Sync Helper for DailySpecial
+async function syncDailySpecial(
+  tx: any,
+  restaurantId: string,
+  menuItem: { id: string; name: string; categoryId: string; price: number; description: string | null; isAvailable: boolean },
+  isSpecial: boolean
+) {
+  let categoryName = "General";
+  try {
+    const cat = await tx.category.findUnique({
+      where: { id: menuItem.categoryId },
+      select: { name: true },
+    });
+    if (cat?.name) categoryName = cat.name;
+  } catch {
+    // Ignore category fetch error
+  }
+
+  const specialModel = tx.dailySpecial && typeof tx.dailySpecial.findFirst === "function" ? tx.dailySpecial : null;
+
+  if (specialModel) {
+    const existing = await specialModel.findFirst({
+      where: { restaurantId, menuItemId: menuItem.id },
+    });
+
+    if (isSpecial) {
+      if (existing) {
+        await specialModel.update({
+          where: { id: existing.id },
+          data: {
+            name: menuItem.name,
+            category: categoryName,
+            regularPrice: menuItem.price,
+            description: menuItem.description || menuItem.name,
+            isAvailable: menuItem.isAvailable,
+          },
+        });
+      } else {
+        await specialModel.create({
+          data: {
+            restaurantId,
+            menuItemId: menuItem.id,
+            name: menuItem.name,
+            category: categoryName,
+            regularPrice: menuItem.price,
+            todayPrice: menuItem.price,
+            discount: "0% OFF",
+            availableQty: "Available",
+            chefRecommendation: "Chef Special",
+            description: menuItem.description || menuItem.name,
+            isAvailable: menuItem.isAvailable,
+          },
+        });
+      }
+    } else if (existing) {
+      await specialModel.update({
+        where: { id: existing.id },
+        data: { isAvailable: false },
+      });
+    }
+  } else {
+    // Resilient SQL fallback if model delegate is unbound
+    const rows: any[] = await tx.$queryRaw`
+      SELECT id FROM "DailySpecial" WHERE "restaurantId" = ${restaurantId} AND "menuItemId" = ${menuItem.id} LIMIT 1
+    `;
+    const existingId = rows && rows.length > 0 ? rows[0].id : null;
+
+    if (isSpecial) {
+      if (existingId) {
+        await tx.$executeRaw`
+          UPDATE "DailySpecial"
+          SET "name" = ${menuItem.name},
+              "category" = ${categoryName},
+              "regularPrice" = ${menuItem.price},
+              "description" = ${menuItem.description || menuItem.name},
+              "isAvailable" = ${menuItem.isAvailable},
+              "updatedAt" = ${new Date()}
+          WHERE "id" = ${existingId}
+        `;
+      } else {
+        const spId = `sp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const now = new Date();
+        await tx.$executeRaw`
+          INSERT INTO "DailySpecial" (
+            "id", "restaurantId", "menuItemId", "name", "category", "regularPrice", "todayPrice", "discount", "availableQty", "chefRecommendation", "description", "isAvailable", "date", "createdAt", "updatedAt"
+          ) VALUES (
+            ${spId}, ${restaurantId}, ${menuItem.id}, ${menuItem.name}, ${categoryName}, ${menuItem.price}, ${menuItem.price}, '0% OFF', 'Available', 'Chef Special', ${menuItem.description || menuItem.name}, ${menuItem.isAvailable}, ${now}, ${now}, ${now}
+          )
+        `;
+      }
+    } else if (existingId) {
+      await tx.$executeRaw`
+        UPDATE "DailySpecial"
+        SET "isAvailable" = false, "updatedAt" = ${new Date()}
+        WHERE "id" = ${existingId}
+      `;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Categories
 // ---------------------------------------------------------------------------
@@ -63,6 +169,7 @@ export async function createCategory(formData: FormData) {
   });
 
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/specials");
   return category;
 }
 
@@ -73,7 +180,6 @@ export async function updateCategory(
   await requireRole(["owner", "admin"]);
   const restaurantId = await getActiveRestaurantId();
 
-  // Ownership check — category must belong to caller's restaurant.
   const existing = await db.category.findFirst({
     where: { id: categoryId, restaurantId },
   });
@@ -85,6 +191,7 @@ export async function updateCategory(
   });
 
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/specials");
   return updated;
 }
 
@@ -99,6 +206,7 @@ export async function deleteCategory(categoryId: string) {
 
   await db.category.delete({ where: { id: categoryId } });
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/specials");
 }
 
 // ---------------------------------------------------------------------------
@@ -134,17 +242,24 @@ export async function createMenuItem(formData: FormData) {
   });
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
 
-  // Ensure category belongs to same restaurant.
   const category = await db.category.findFirst({
     where: { id: parsed.data.categoryId, restaurantId },
   });
   if (!category) throw new Error("Category not found");
 
-  const item = await db.menuItem.create({
-    data: { ...parsed.data, restaurantId },
+  const isSpecial = checkIsSpecialVariant(parsed.data.variants);
+
+  const item = await db.$transaction(async (tx) => {
+    const created = await tx.menuItem.create({
+      data: { ...parsed.data, restaurantId },
+    });
+
+    await syncDailySpecial(tx, restaurantId, created, isSpecial);
+    return created;
   });
 
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/specials");
   return item;
 }
 
@@ -168,12 +283,23 @@ export async function updateMenuItem(
   });
   if (!existing) throw new Error("Menu item not found");
 
-  const updated = await db.menuItem.update({
-    where: { id: menuItemId },
-    data,
+  const isSpecialProvided = data.variants !== undefined;
+  const isSpecial = isSpecialProvided
+    ? checkIsSpecialVariant(data.variants)
+    : checkIsSpecialVariant(existing.variants as any[]);
+
+  const updated = await db.$transaction(async (tx) => {
+    const item = await tx.menuItem.update({
+      where: { id: menuItemId },
+      data,
+    });
+
+    await syncDailySpecial(tx, restaurantId, item, isSpecial);
+    return item;
   });
 
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/specials");
   return updated;
 }
 
@@ -181,7 +307,6 @@ export async function toggleMenuItemAvailability(
   menuItemId: string,
   isAvailable: boolean
 ) {
-  // Staff can also toggle availability (e.g. "86 this dish").
   await requireRole(["owner", "admin", "staff"]);
   const restaurantId = await getActiveRestaurantId();
 
@@ -190,12 +315,20 @@ export async function toggleMenuItemAvailability(
   });
   if (!existing) throw new Error("Menu item not found");
 
-  const updated = await db.menuItem.update({
-    where: { id: menuItemId },
-    data: { isAvailable },
+  const isSpecial = checkIsSpecialVariant(existing.variants as any[]);
+
+  const updated = await db.$transaction(async (tx) => {
+    const item = await tx.menuItem.update({
+      where: { id: menuItemId },
+      data: { isAvailable },
+    });
+
+    await syncDailySpecial(tx, restaurantId, item, isSpecial && isAvailable);
+    return item;
   });
 
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/specials");
   return updated;
 }
 
@@ -208,6 +341,11 @@ export async function deleteMenuItem(menuItemId: string) {
   });
   if (!existing) throw new Error("Menu item not found");
 
-  await db.menuItem.delete({ where: { id: menuItemId } });
+  await db.$transaction(async (tx) => {
+    await syncDailySpecial(tx, restaurantId, existing, false);
+    await tx.menuItem.delete({ where: { id: menuItemId } });
+  });
+
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/specials");
 }
