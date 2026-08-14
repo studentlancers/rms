@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/tabs";
 import { OrganizationSettings } from "@/components/auth/organization/organization-settings";
 import { OrganizationPeople } from "@/components/auth/organization/organization-people";
+import { BillingChargesSettings } from "@/components/settings/billing-charges-settings";
 
 export default function OrganizationSettingsPage() {
   return (
@@ -20,8 +21,7 @@ export default function OrganizationSettingsPage() {
           Restaurant Settings
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Manage restaurant details, staff roles, and
-          invitations.
+          Manage restaurant details, staff roles, invitations, and default bill charges.
         </p>
       </div>
 
@@ -30,6 +30,7 @@ export default function OrganizationSettingsPage() {
           <TabsTrigger value="settings">
             Settings
           </TabsTrigger>
+          <TabsTrigger value="charges">Bill Charges</TabsTrigger>
           <TabsTrigger value="staff">staff</TabsTrigger>
         </TabsList>
 
@@ -37,6 +38,12 @@ export default function OrganizationSettingsPage() {
           value="settings"
           className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-2xs mt-4">
           <OrganizationSettings />
+        </TabsContent>
+
+        <TabsContent
+          value="charges"
+          className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-2xs mt-4">
+          <BillingChargesSettings />
         </TabsContent>
 
         <TabsContent

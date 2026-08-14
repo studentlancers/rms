@@ -45,6 +45,7 @@ const rawNavigationItems = [
   { name: "Expenses", path: "/expenses", icon: Receipt },
   { name: "Menu", path: "/menu", icon: UtensilsCrossed },
   { name: "Billing", path: "/billing", icon: Receipt },
+  { name: "Delivery", path: "/delivery", icon: Bike },
   { name: "Staff", path: "/staff", icon: Users },
   { name: "Platform", path: "/platform", icon: Globe },
   { name: "Reports", path: "/reports", icon: FileText },

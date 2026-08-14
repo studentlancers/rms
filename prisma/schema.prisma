@@ -183,7 +183,12 @@ model Order {
   items             Json
   subtotal          Float
   tax               Float
+  packagingCharge   Float         @default(0)
+  serviceCharge     Float         @default(0)
+  splittingCharge   Float         @default(0)
   total             Float
+  customerName      String?
+  customerPhone     String?
   paymentStatus     PaymentStatus @default(PENDING)
   razorpayOrderId   String?
   razorpayPaymentId String?
@@ -195,6 +200,18 @@ model Order {
   @@index([restaurantId])
   @@index([restaurantId, status])
   @@index([tableId])
+}
+
+model RestaurantSettings {
+  id                     String   @id @default(cuid())
+  restaurantId           String   @unique
+  defaultPackagingCharge Float    @default(0)
+  defaultServiceCharge   Float    @default(0)
+  defaultSplittingCharge Float    @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([restaurantId])
 }
 
 model Delivery {

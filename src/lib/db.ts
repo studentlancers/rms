@@ -26,6 +26,11 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+// Check if cached client is missing newly generated models in dev mode
+if (globalForPrisma.prisma && !("restaurantSettings" in globalForPrisma.prisma)) {
+  globalForPrisma.prisma = undefined;
+}
+
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {

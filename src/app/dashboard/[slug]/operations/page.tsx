@@ -8,14 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Plus,
-  Filter,
   CheckCircle2,
   Clock,
   MapPin,
   Loader2,
-  XCircle,
   UserCheck,
-  Calendar,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -25,6 +23,7 @@ import {
   updateReservationStatus,
 } from "@/actions/reservations";
 import { listTables } from "@/actions/tables";
+import { getBillingSettings, updateBillingSettings } from "@/actions/billing-settings";
 
 export default function OperationsPage() {
   // Data States
@@ -38,6 +37,12 @@ export default function OperationsPage() {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isFloorPlanOpen, setIsFloorPlanOpen] = useState(false);
 
+  // Default Billing Charge Prices State (Admin/Owner Management)
+  const [defaultPackagingCharge, setDefaultPackagingCharge] = useState("0");
+  const [defaultServiceCharge, setDefaultServiceCharge] = useState("0");
+  const [defaultSplittingCharge, setDefaultSplittingCharge] = useState("0");
+  const [isSavingCharges, setIsSavingCharges] = useState(false);
+
   // New Reservation Form State
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
@@ -46,17 +51,28 @@ export default function OperationsPage() {
   const [selectedTableId, setSelectedTableId] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Load reservations and tables from database
+  // Load operations data & billing charge defaults from database
   const loadOperationsData = async (silent = false) => {
     try {
       if (!silent) setIsLoading(true);
-      const [fetchedReservations, fetchedTables] = await Promise.all([
+      const [fetchedReservations, fetchedTables, settings] = await Promise.allSettled([
         listReservations(),
         listTables(),
+        getBillingSettings(),
       ]);
 
-      setReservations(fetchedReservations || []);
-      setTables(fetchedTables || []);
+      const resData = fetchedReservations.status === "fulfilled" ? fetchedReservations.value : [];
+      const tblData = fetchedTables.status === "fulfilled" ? fetchedTables.value : [];
+      const settingsData = settings.status === "fulfilled" ? settings.value : null;
+
+      setReservations(resData || []);
+      setTables(tblData || []);
+
+      if (settingsData) {
+        setDefaultPackagingCharge((settingsData.defaultPackagingCharge || 0).toString());
+        setDefaultServiceCharge((settingsData.defaultServiceCharge || 0).toString());
+        setDefaultSplittingCharge((settingsData.defaultSplittingCharge || 0).toString());
+      }
     } catch (err: any) {
       console.error("Error loading operations data:", err);
       if (!silent) toast.error(err.message || "Failed to load operations data");
@@ -82,27 +98,54 @@ export default function OperationsPage() {
     return reservations.filter((r) => r.status === filterStatus);
   }, [reservations, filterStatus]);
 
-  // Handle New Booking Submission
+  // Handle Save Default Charge Prices (Owner/Admin only)
+  const handleSaveDefaultCharges = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const pkg = parseFloat(defaultPackagingCharge) || 0;
+    const svc = parseFloat(defaultServiceCharge) || 0;
+    const splt = parseFloat(defaultSplittingCharge) || 0;
+
+    if (pkg < 0 || svc < 0 || splt < 0) {
+      toast.error("Default charge prices cannot be negative");
+      return;
+    }
+
+    setIsSavingCharges(true);
+    try {
+      await updateBillingSettings({
+        defaultPackagingCharge: pkg,
+        defaultServiceCharge: svc,
+        defaultSplittingCharge: splt,
+      });
+      toast.success("Default billing charge prices saved successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save default billing charges");
+    } finally {
+      setIsSavingCharges(false);
+    }
+  };
+
+  // Handle New Booking Submit
   const handleCreateBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!custName || !custPhone || !resTime) {
+    if (!custName || !partySize || !resTime) {
       toast.error("Please fill in all required booking fields");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append("customerName", custName);
-      formData.append("customerPhone", custPhone);
-      formData.append("partySize", partySize);
-      formData.append("reservationTime", new Date(resTime).toISOString());
-      if (selectedTableId) formData.append("tableId", selectedTableId);
-      if (notes) formData.append("notes", notes);
+      const fd = new FormData();
+      fd.append("customerName", custName);
+      fd.append("customerPhone", custPhone);
+      fd.append("partySize", partySize);
+      fd.append("reservationTime", resTime);
+      if (selectedTableId) fd.append("tableId", selectedTableId);
+      if (notes) fd.append("notes", notes);
 
-      await createReservation(formData);
-      toast.success("New table booking logged successfully!");
+      await createReservation(fd);
 
+      toast.success("New reservation created successfully!");
       setIsBookingModalOpen(false);
       setCustName("");
       setCustPhone("");
@@ -110,7 +153,6 @@ export default function OperationsPage() {
       setResTime("");
       setSelectedTableId("");
       setNotes("");
-
       await loadOperationsData(true);
     } catch (err: any) {
       toast.error(err.message || "Failed to create reservation");
@@ -188,6 +230,86 @@ export default function OperationsPage() {
         />
       </div>
 
+      {/* Additional Charges — Default Prices Management Card */}
+      <div className="design-surface p-6 space-y-4">
+        <div>
+          <div className="text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
+            ADMIN SETTINGS
+          </div>
+          <h3 className="text-xl font-bold text-slate-900 mt-0.5">
+            Default Billing Charges
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Configure standard default prices for Packaging, Service, and Splitting charges. These default values will automatically populate when generating bills.
+          </p>
+        </div>
+
+        <form onSubmit={handleSaveDefaultCharges} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Packaging Charges
+              </label>
+              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+                <span className="text-xs text-slate-400 font-mono">₹</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={defaultPackagingCharge}
+                  onChange={(e) => setDefaultPackagingCharge(e.target.value)}
+                  className="w-full h-7 text-xs font-mono border-none p-0 focus-visible:ring-0 text-slate-900 font-bold shadow-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Service Charges
+              </label>
+              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+                <span className="text-xs text-slate-400 font-mono">₹</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={defaultServiceCharge}
+                  onChange={(e) => setDefaultServiceCharge(e.target.value)}
+                  className="w-full h-7 text-xs font-mono border-none p-0 focus-visible:ring-0 text-slate-900 font-bold shadow-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Splitting Charges
+              </label>
+              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+                <span className="text-xs text-slate-400 font-mono">₹</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={defaultSplittingCharge}
+                  onChange={(e) => setDefaultSplittingCharge(e.target.value)}
+                  className="w-full h-7 text-xs font-mono border-none p-0 focus-visible:ring-0 text-slate-900 font-bold shadow-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="submit"
+              disabled={isSavingCharges}
+              className="px-5 py-2.5 h-10 bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold rounded-xl border-none cursor-pointer"
+            >
+              {isSavingCharges ? "Saving Charges..." : "Save Charges"}
+            </Button>
+          </div>
+        </form>
+      </div>
+
       {/* Loading State */}
       {isLoading && (
         <div className="design-surface p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
@@ -227,102 +349,81 @@ export default function OperationsPage() {
                   }
                   className="flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                 >
-                  <Filter className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Filter: {filterStatus}</span>
+                  <span>Status: {filterStatus}</span>
                 </Button>
               </div>
             </div>
 
-            {/* Reservation List */}
-            <div className="divide-y divide-slate-100">
+            {/* Reservations Queue List */}
+            <div className="space-y-3">
               {filteredReservations.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">
-                  No reservations found.
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  No reservations found for current filter.
                 </div>
               ) : (
-                filteredReservations.map((res) => {
-                  const initials = res.customerName
-                    ? res.customerName
-                        .split(" ")
-                        .map((n: string) => n[0])
-                        .join("")
-                        .substring(0, 2)
-                        .toUpperCase()
-                    : "CU";
-
-                  const timeStr = new Date(res.reservationTime).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-
-                  return (
-                    <div
-                      key={res.id}
-                      className="py-4 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-slate-50/80 px-3 rounded-xl transition-colors gap-3"
-                    >
-                      <div className="flex items-center gap-4">
-                        <span className="text-xs font-mono font-semibold text-slate-600 w-14">
-                          {timeStr}
-                        </span>
-                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center border border-blue-200/60 shrink-0">
-                          {initials}
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-slate-900">
-                            {res.customerName}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {res.partySize} guests · {res.table?.tableNumber ? `Table ${res.table.tableNumber}` : "Unassigned"} · {res.customerPhone}
-                          </div>
-                        </div>
+                filteredReservations.map((res) => (
+                  <div
+                    key={res.id}
+                    className="p-4 bg-slate-50/70 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-blue-100/80 text-blue-700 rounded-xl font-bold text-xs">
+                        {res.partySize}P
                       </div>
-
-                      <div className="flex items-center gap-2 self-end sm:self-auto">
-                        <StatusBadge status={res.status} />
-
-                        {res.status === "PENDING" && (
-                          <select
-                            onChange={(e) => {
-                              if (e.target.value) handleConfirmReservation(res.id, e.target.value);
-                            }}
-                            defaultValue=""
-                            className="text-xs px-2 py-1 border border-slate-200 rounded-lg bg-white"
-                          >
-                            <option value="" disabled>
-                              Assign Table...
-                            </option>
-                            {tables.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                Table {t.tableNumber}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-
-                        {res.status === "CONFIRMED" && (
-                          <Button
-                            size="sm"
-                            onClick={() => handleStatusUpdate(res.id, "SEATED")}
-                            className="h-7 text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2.5 rounded-lg"
-                          >
-                            <UserCheck className="w-3 h-3 mr-1" /> Seat Guest
-                          </Button>
-                        )}
-
-                        {res.status !== "CANCELLED" && res.status !== "SEATED" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleStatusUpdate(res.id, "CANCELLED")}
-                            className="h-7 text-[11px] text-rose-600 hover:bg-rose-50 px-2 rounded-lg"
-                          >
-                            <XCircle className="w-3 h-3" />
-                          </Button>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-slate-900">
+                            {res.customerName}
+                          </span>
+                          <StatusBadge status={res.status} />
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5 font-mono">
+                          {res.customerPhone || "No phone"} •{" "}
+                          {new Date(res.reservationTime).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                        {res.notes && (
+                          <div className="text-[11px] text-amber-600 font-medium mt-1">
+                            Note: {res.notes}
+                          </div>
                         )}
                       </div>
                     </div>
-                  );
-                })
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      {res.status === "PENDING" && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleConfirmReservation(res.id, res.tableId || "")}
+                          className="px-3 py-1.5 h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl border-none cursor-pointer"
+                        >
+                          <UserCheck className="w-3.5 h-3.5 mr-1" /> Seat Guest
+                        </Button>
+                      )}
+                      {res.status === "CONFIRMED" && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleStatusUpdate(res.id, "SEATED")}
+                          className="px-3 py-1.5 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-xl border-none cursor-pointer"
+                        >
+                          Mark Seated
+                        </Button>
+                      )}
+                      {res.status !== "CANCELLED" && res.status !== "COMPLETED" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleStatusUpdate(res.id, "CANCELLED")}
+                          className="px-2 py-1.5 h-8 text-xs text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -396,14 +497,14 @@ export default function OperationsPage() {
         <form onSubmit={handleCreateBookingSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Customer Full Name *
+              Customer Name *
             </label>
             <Input
               type="text"
               required
               value={custName}
               onChange={(e) => setCustName(e.target.value)}
-              placeholder="e.g. Liam Carter"
+              placeholder="e.g. Rahul Sharma"
               className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs"
             />
           </div>
@@ -411,17 +512,17 @@ export default function OperationsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Phone Number *
+                Phone Number
               </label>
               <Input
                 type="text"
-                required
                 value={custPhone}
                 onChange={(e) => setCustPhone(e.target.value)}
                 placeholder="+91 98765 43210"
                 className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono"
               />
             </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Party Size (Guests) *

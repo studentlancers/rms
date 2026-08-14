@@ -23,6 +23,18 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   CANCELLED: [],
 };
 
+import { calculateBillTotal } from "@/lib/bill-calculator";
+
+export async function calculateBillTotalAction(
+  subtotal: number,
+  taxRate: number = 0.05,
+  packagingCharge: number = 0,
+  serviceCharge: number = 0,
+  splittingCharge: number = 0
+) {
+  return calculateBillTotal(subtotal, taxRate, packagingCharge, serviceCharge, splittingCharge);
+}
+
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -39,6 +51,18 @@ const orderItemSchema = z.object({
 const createOrderSchema = z.object({
   orderType: z.enum(["DINE_IN", "TAKEAWAY", "DELIVERY"]),
   tableId: z.string().optional(),
+  customerName: z.string().transform((val) => val?.trim() || undefined).optional(),
+  customerPhone: z
+    .string()
+    .transform((val) => val?.trim() || undefined)
+    .refine(
+      (val) => !val || /^[+0-9\s-]{7,15}$/.test(val),
+      "Invalid phone number format"
+    )
+    .optional(),
+  packagingCharge: z.number().min(0, "Packaging charge must be non-negative").default(0),
+  serviceCharge: z.number().min(0, "Service charge must be non-negative").default(0),
+  splittingCharge: z.number().min(0, "Splitting charge must be non-negative").default(0),
   items: z.array(orderItemSchema).min(1, "Order must have at least one item"),
   taxRate: z.number().min(0).max(1).default(0.05), // 5% default
 });
@@ -54,6 +78,11 @@ const createOrderSchema = z.object({
 export async function createOrder(data: {
   orderType: OrderType;
   tableId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  packagingCharge?: number;
+  serviceCharge?: number;
+  splittingCharge?: number;
   items: Array<{
     menuItemId: string;
     name: string;
@@ -72,7 +101,17 @@ export async function createOrder(data: {
   const parsed = createOrderSchema.safeParse(data);
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
 
-  const { orderType, tableId, items, taxRate } = parsed.data;
+  const {
+    orderType,
+    tableId,
+    customerName,
+    customerPhone,
+    packagingCharge,
+    serviceCharge,
+    splittingCharge,
+    items,
+    taxRate,
+  } = parsed.data;
 
   // If DINE_IN, tableId is required.
   if (orderType === "DINE_IN" && !tableId) {
@@ -102,12 +141,17 @@ export async function createOrder(data: {
     }
   }
 
-  const subtotal = items.reduce(
+  const rawSubtotal = items.reduce(
     (sum, item) => sum + item.unitPrice * item.quantity,
     0
   );
-  const tax = parseFloat((subtotal * taxRate).toFixed(2));
-  const total = parseFloat((subtotal + tax).toFixed(2));
+  const calc = calculateBillTotal(
+    rawSubtotal,
+    taxRate,
+    packagingCharge,
+    serviceCharge,
+    splittingCharge
+  );
 
   return await db.$transaction(async (tx) => {
     const order = await tx.order.create({
@@ -117,10 +161,15 @@ export async function createOrder(data: {
         createdByUserId: ctx.userId,
         orderType,
         status: "PENDING",
+        customerName: customerName || null,
+        customerPhone: customerPhone || null,
         items,
-        subtotal,
-        tax,
-        total,
+        subtotal: calc.subtotal,
+        tax: calc.tax,
+        packagingCharge: calc.packagingCharge,
+        serviceCharge: calc.serviceCharge,
+        splittingCharge: calc.splittingCharge,
+        total: calc.total,
       },
     });
 

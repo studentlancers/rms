@@ -29,8 +29,10 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { toast } from "sonner";
 import { listOrders, createOrder } from "@/actions/orders";
+import { calculateBillTotal } from "@/lib/bill-calculator";
 import { listMenuItems } from "@/actions/menu";
 import { listTables } from "@/actions/tables";
+import { getBillingSettings } from "@/actions/billing-settings";
 
 export default function StaffBillingPage() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -54,6 +56,30 @@ export default function StaffBillingPage() {
   const [cartItems, setCartItems] = useState<Array<{ menuItemId: string; name: string; quantity: number; unitPrice: number }>>([]);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState("");
   const [selectedQty, setSelectedQty] = useState(1);
+
+  // Customer Info & Charges State
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [packagingCharge, setPackagingCharge] = useState("0");
+  const [serviceCharge, setServiceCharge] = useState("0");
+  const [splittingCharge, setSplittingCharge] = useState("0");
+
+  // Load default charge settings when opening modal
+  const loadChargeDefaults = async () => {
+    try {
+      const defaults = await getBillingSettings();
+      setPackagingCharge((defaults.defaultPackagingCharge || 0).toString());
+      setServiceCharge((defaults.defaultServiceCharge || 0).toString());
+      setSplittingCharge((defaults.defaultSplittingCharge || 0).toString());
+    } catch (err) {
+      console.error("Failed to load charge defaults", err);
+    }
+  };
+
+  const handleOpenCreateBill = async () => {
+    setIsCreateBillOpen(true);
+    await loadChargeDefaults();
+  };
 
   // Fetch orders, menu items, and tables
   const loadBillingData = async () => {
@@ -107,7 +133,9 @@ export default function StaffBillingPage() {
       const invNo = formatInvoiceNumber(o.id);
       const matchesSearch =
         invNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (o.table?.tableNumber && o.table.tableNumber.toLowerCase().includes(searchQuery.toLowerCase()));
+        (o.table?.tableNumber && o.table.tableNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (o.customerName && o.customerName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (o.customerPhone && o.customerPhone.includes(searchQuery));
       const matchesStatus =
         selectedStatus === "all" || o.paymentStatus === selectedStatus;
 
@@ -170,6 +198,18 @@ export default function StaffBillingPage() {
     toast.success(`Added ${selectedQty}x ${item.name}`);
   };
 
+  // Dynamic central bill calculation for Quick Bill modal
+  const calculatedSubtotal = useMemo(() => {
+    return cartItems.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
+  }, [cartItems]);
+
+  const billBreakdown = useMemo(() => {
+    const pkg = Math.max(0, parseFloat(packagingCharge) || 0);
+    const svc = Math.max(0, parseFloat(serviceCharge) || 0);
+    const splt = Math.max(0, parseFloat(splittingCharge) || 0);
+    return calculateBillTotal(calculatedSubtotal, 0.05, pkg, svc, splt);
+  }, [calculatedSubtotal, packagingCharge, serviceCharge, splittingCharge]);
+
   // Submit Create Quick Bill
   const handleCreateBillSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,17 +218,28 @@ export default function StaffBillingPage() {
       return;
     }
 
+    const pkg = Math.max(0, parseFloat(packagingCharge) || 0);
+    const svc = Math.max(0, parseFloat(serviceCharge) || 0);
+    const splt = Math.max(0, parseFloat(splittingCharge) || 0);
+
     setIsSubmitting(true);
     try {
       await createOrder({
         orderType: selectedTableId ? "DINE_IN" : "TAKEAWAY",
         tableId: selectedTableId || undefined,
+        customerName: customerName.trim() || undefined,
+        customerPhone: customerPhone.trim() || undefined,
+        packagingCharge: pkg,
+        serviceCharge: svc,
+        splittingCharge: splt,
         items: cartItems,
       });
 
       toast.success("Bill generated successfully");
       setIsCreateBillOpen(false);
       setCartItems([]);
+      setCustomerName("");
+      setCustomerPhone("");
       await loadBillingData();
     } catch (err: any) {
       toast.error(err.message || "Failed to generate bill");
@@ -214,7 +265,7 @@ export default function StaffBillingPage() {
         </div>
 
         <Button
-          onClick={() => setIsCreateBillOpen(true)}
+          onClick={handleOpenCreateBill}
           className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md border-none cursor-pointer self-start md:self-auto"
         >
           <Receipt className="w-4 h-4" />
@@ -262,7 +313,7 @@ export default function StaffBillingPage() {
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 z-10" />
               <Input
-                placeholder="Search by invoice # or table..."
+                placeholder="Search by invoice #, table, customer..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 h-9 bg-slate-50 border-slate-200 rounded-xl text-xs text-slate-900 focus-visible:ring-2 focus-visible:ring-blue-600/20"
@@ -289,6 +340,7 @@ export default function StaffBillingPage() {
               <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">INVOICE NO.</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TYPE & TABLE</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">CUSTOMER</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ITEMS SUMMARY</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DATE & TIME</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">TOTAL (₹)</TableHead>
@@ -299,7 +351,7 @@ export default function StaffBillingPage() {
             <TableBody className="divide-y divide-slate-100 text-xs">
               {filteredOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-slate-400 text-xs">
+                  <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
                     No billing records found.
                   </TableCell>
                 </TableRow>
@@ -319,7 +371,17 @@ export default function StaffBillingPage() {
                           {order.table?.tableNumber ? `Table ${order.table.tableNumber}` : "Counter"}
                         </div>
                       </TableCell>
-                      <TableCell className="py-4 px-4 text-slate-600 max-w-[220px] truncate">
+                      <TableCell className="py-4 px-4 text-slate-700">
+                        {order.customerName || order.customerPhone ? (
+                          <div>
+                            <div className="font-semibold text-slate-900">{order.customerName || "—"}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">{order.customerPhone || ""}</div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 font-mono text-[11px]">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-4 px-4 text-slate-600 max-w-[200px] truncate">
                         {formatItemsSummary(order.items)}
                       </TableCell>
                       <TableCell className="py-4 px-4 font-mono text-slate-500">
@@ -370,6 +432,24 @@ export default function StaffBillingPage() {
               </p>
             </div>
 
+            {/* Optional Customer Details Display */}
+            {(selectedOrder.customerName || selectedOrder.customerPhone) && (
+              <div className="p-3 bg-slate-50 rounded-lg text-slate-800 font-sans space-y-0.5 border border-slate-200">
+                {selectedOrder.customerName && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Customer Name:</span>
+                    <span className="font-semibold text-slate-900">{selectedOrder.customerName}</span>
+                  </div>
+                )}
+                {selectedOrder.customerPhone && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Phone Number:</span>
+                    <span className="font-semibold text-slate-900 font-mono">{selectedOrder.customerPhone}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="py-3 border-t border-b border-dashed border-slate-300 space-y-2">
               <div className="font-bold font-sans text-slate-700 uppercase text-[10px]">Ordered Items Summary</div>
               <div className="p-3 bg-slate-50 rounded-lg text-slate-900 font-sans font-medium">
@@ -386,6 +466,24 @@ export default function StaffBillingPage() {
                 <span>GST (5%):</span>
                 <span>₹{selectedOrder.tax?.toFixed(2)}</span>
               </div>
+              {selectedOrder.packagingCharge > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Packaging Charges:</span>
+                  <span>₹{selectedOrder.packagingCharge.toFixed(2)}</span>
+                </div>
+              )}
+              {selectedOrder.serviceCharge > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Service Charges:</span>
+                  <span>₹{selectedOrder.serviceCharge.toFixed(2)}</span>
+                </div>
+              )}
+              {selectedOrder.splittingCharge > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Splitting Charges:</span>
+                  <span>₹{selectedOrder.splittingCharge.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-bold text-sm text-slate-900 pt-2 border-t border-dashed border-slate-300 font-sans">
                 <span>GRAND TOTAL:</span>
                 <span className="text-blue-600">₹{selectedOrder.total?.toFixed(2)}</span>
@@ -436,15 +534,43 @@ export default function StaffBillingPage() {
         title="Create New Customer Bill (POS)"
         subtitle="Select table & dishes to generate instant tax bill."
       >
-        <form onSubmit={handleCreateBillSubmit} className="space-y-4">
+        <form onSubmit={handleCreateBillSubmit} className="space-y-2.5 text-xs">
+          {/* Optional Customer Information */}
+          <div className="grid grid-cols-2 gap-2.5 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                Customer Name (Optional)
+              </label>
+              <Input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="e.g. John Doe"
+                className="w-full bg-white text-xs h-8 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                Phone Number (Optional)
+              </label>
+              <Input
+                type="text"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="e.g. +91 9876543210"
+                className="w-full bg-white text-xs h-8 rounded-lg font-mono"
+              />
+            </div>
+          </div>
+
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
               Table Selection (Optional for Takeaway)
             </label>
             <select
               value={selectedTableId}
               onChange={(e) => setSelectedTableId(e.target.value)}
-              className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
+              className="w-full px-2.5 py-1.5 h-8.5 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none"
             >
               <option value="">Counter / Takeaway Order</option>
               {tables.map((t) => (
@@ -455,14 +581,14 @@ export default function StaffBillingPage() {
             </select>
           </div>
 
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-            <div className="text-xs font-semibold text-slate-800">Add Item to Bill</div>
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="text-[11px] font-semibold text-slate-800">Add Item to Bill</div>
             <div className="grid grid-cols-12 gap-2">
               <div className="col-span-7">
                 <select
                   value={selectedMenuItemId}
                   onChange={(e) => setSelectedMenuItemId(e.target.value)}
-                  className="w-full px-3 py-2 h-9 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none"
+                  className="w-full px-2.5 py-1.5 h-8 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none"
                 >
                   {menuItems.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -477,14 +603,14 @@ export default function StaffBillingPage() {
                   min="1"
                   value={selectedQty}
                   onChange={(e) => setSelectedQty(parseInt(e.target.value, 10) || 1)}
-                  className="w-full h-9 text-xs rounded-lg font-mono"
+                  className="w-full h-8 text-xs rounded-lg font-mono"
                 />
               </div>
               <div className="col-span-2">
                 <Button
                   type="button"
                   onClick={handleAddToCart}
-                  className="w-full h-9 text-xs bg-blue-600 text-white rounded-lg p-0"
+                  className="w-full h-8 text-xs bg-blue-600 text-white rounded-lg p-0 cursor-pointer"
                 >
                   Add
                 </Button>
@@ -492,10 +618,10 @@ export default function StaffBillingPage() {
             </div>
 
             {/* Cart Preview */}
-            <div className="space-y-1.5 pt-2">
-              <div className="text-[10px] font-bold text-slate-400 uppercase">Selected Items ({cartItems.length})</div>
+            <div className="space-y-1 pt-1 max-h-24 overflow-y-auto pr-1">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Selected Items ({cartItems.length})</div>
               {cartItems.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white rounded border border-slate-200">
+                <div key={idx} className="flex justify-between items-center text-xs p-1.5 bg-white rounded border border-slate-200">
                   <span className="font-medium text-slate-800">{item.quantity}x {item.name}</span>
                   <span className="font-mono font-bold text-slate-900">₹{(item.quantity * item.unitPrice).toFixed(2)}</span>
                 </div>
@@ -503,19 +629,128 @@ export default function StaffBillingPage() {
             </div>
           </div>
 
-          <div className="pt-3 flex justify-end gap-3 border-t border-slate-100">
+          {/* Additional Charges Section */}
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-800">Additional Charges</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white p-2 rounded-lg border border-slate-200 space-y-1">
+                <label className="block text-[10px] font-medium text-slate-600 truncate">
+                  Packaging Charges
+                </label>
+                <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-1.5 py-0.5">
+                  <span className="text-xs text-slate-400 font-mono">₹</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    placeholder="0"
+                    value={packagingCharge}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (e.target.value === "" || val >= 0) {
+                        setPackagingCharge(e.target.value);
+                      }
+                    }}
+                    className="w-full h-5 text-xs font-mono bg-transparent border-none p-0 focus-visible:ring-0 text-slate-900 font-semibold shadow-none"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white p-2 rounded-lg border border-slate-200 space-y-1">
+                <label className="block text-[10px] font-medium text-slate-600 truncate">
+                  Service Charges
+                </label>
+                <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-1.5 py-0.5">
+                  <span className="text-xs text-slate-400 font-mono">₹</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    placeholder="0"
+                    value={serviceCharge}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (e.target.value === "" || val >= 0) {
+                        setServiceCharge(e.target.value);
+                      }
+                    }}
+                    className="w-full h-5 text-xs font-mono bg-transparent border-none p-0 focus-visible:ring-0 text-slate-900 font-semibold shadow-none"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white p-2 rounded-lg border border-slate-200 space-y-1">
+                <label className="block text-[10px] font-medium text-slate-600 truncate">
+                  Splitting Charges
+                </label>
+                <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-md px-1.5 py-0.5">
+                  <span className="text-xs text-slate-400 font-mono">₹</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    placeholder="0"
+                    value={splittingCharge}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (e.target.value === "" || val >= 0) {
+                        setSplittingCharge(e.target.value);
+                      }
+                    }}
+                    className="w-full h-5 text-xs font-mono bg-transparent border-none p-0 focus-visible:ring-0 text-slate-900 font-semibold shadow-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Instant Live Central Billing Breakdown */}
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs">
+            <div className="flex justify-between text-slate-600">
+              <span>Subtotal:</span>
+              <span className="font-mono font-semibold text-slate-900">₹{billBreakdown.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>GST (5%):</span>
+              <span className="font-mono font-semibold text-slate-900">₹{billBreakdown.tax.toFixed(2)}</span>
+            </div>
+            {billBreakdown.packagingCharge > 0 && (
+              <div className="flex justify-between text-slate-600">
+                <span>Packaging:</span>
+                <span className="font-mono font-semibold text-slate-900">₹{billBreakdown.packagingCharge.toFixed(2)}</span>
+              </div>
+            )}
+            {billBreakdown.serviceCharge > 0 && (
+              <div className="flex justify-between text-slate-600">
+                <span>Service Charges:</span>
+                <span className="font-mono font-semibold text-slate-900">₹{billBreakdown.serviceCharge.toFixed(2)}</span>
+              </div>
+            )}
+            {billBreakdown.splittingCharge > 0 && (
+              <div className="flex justify-between text-slate-600">
+                <span>Splitting Charges:</span>
+                <span className="font-mono font-semibold text-slate-900">₹{billBreakdown.splittingCharge.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-xs text-slate-900 pt-1 border-t border-slate-200">
+              <span>Grand Total:</span>
+              <span className="font-mono text-blue-600 text-sm">₹{billBreakdown.total.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
             <Button
               type="button"
               variant="ghost"
               onClick={() => setIsCreateBillOpen(false)}
-              className="px-4 py-2 h-9 text-xs"
+              className="px-3 py-1.5 h-8 text-xs"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting || cartItems.length === 0}
-              className="px-5 py-2 h-9 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none cursor-pointer"
+              className="px-4 py-1.5 h-8 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-lg border-none cursor-pointer"
             >
               {isSubmitting ? "Generating..." : "Generate Bill"}
             </Button>
