@@ -53,11 +53,16 @@ export function BillingChargesSettings() {
 
     setIsSaving(true);
     try {
-      await updateBillingSettings({
+      const saved = await updateBillingSettings({
         defaultPackagingCharge: pkg,
         defaultServiceCharge: svc,
         defaultSplittingCharge: splt,
       });
+      if (saved) {
+        setPackagingDefault((saved.defaultPackagingCharge ?? pkg).toString());
+        setServiceDefault((saved.defaultServiceCharge ?? svc).toString());
+        setSplittingDefault((saved.defaultSplittingCharge ?? splt).toString());
+      }
       toast.success("Default bill charge prices saved successfully!");
     } catch (err: any) {
       toast.error(err.message || "Failed to update default charge prices");
