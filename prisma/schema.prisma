@@ -78,6 +78,7 @@ model Organization {
   slug        String?      @unique
   logo        String?
   metadata    String?
+  isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
   invitations Invitation[]
   members     Member[]

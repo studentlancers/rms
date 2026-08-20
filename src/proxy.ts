@@ -65,16 +65,22 @@ export async function proxy(request: NextRequest) {
 
   const user = session.user as { id: string; role?: string };
 
-  // 4. Super Admin — platform-wide access, skip org checks entirely.
+  // 4. Protect /super-admin routes — ONLY accessible to super_admin
+  const isSuperAdminPath = pathname === "/super-admin" || pathname.startsWith("/super-admin/");
+  if (isSuperAdminPath && user.role !== "super_admin") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // 5. Super Admin — platform-wide access, direct to /super-admin
   if (user.role === "super_admin") {
-    if (pathname === "/" || pathname.startsWith("/dashboard")) {
-      return NextResponse.redirect(new URL("/tenants", request.url));
+    if (pathname === "/" || pathname.startsWith("/dashboard") || pathname === "/tenants") {
+      return NextResponse.redirect(new URL("/super-admin", request.url));
     }
     return NextResponse.next();
   }
 
-  // 5. Org-scoped users: fetch organizations and active member in parallel
-  let userOrgs: Array<{ id: string; name: string; slug: string }> = [];
+  // 6. Org-scoped users: fetch organizations and active member in parallel
+  let userOrgs: Array<{ id: string; name: string; slug: string; isActive?: boolean }> = [];
   let member: { role: string; organizationId: string } | null = null;
 
   try {
@@ -84,7 +90,7 @@ export async function proxy(request: NextRequest) {
     ]);
 
     if (Array.isArray(orgs)) {
-      userOrgs = orgs;
+      userOrgs = orgs as any;
     }
     member = activeMember;
 
@@ -120,7 +126,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(`/dashboard/${activeSlug}`, request.url));
   }
 
-  // 6. Role-based redirects on root or /dashboard
+  // 7. Role-based redirects on root or /dashboard
   if (pathname === "/" || pathname === "/dashboard") {
     if (orgRole === "staff") {
       return NextResponse.redirect(new URL(`/dashboard/${activeSlug}/orders`, request.url));

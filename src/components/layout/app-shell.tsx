@@ -9,11 +9,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const pathname = usePathname();
 
-  // On standalone pages (landing, signin & onboarding), render children directly without app shell padding or sidebars
+  // On standalone pages (landing, signin, onboarding & super-admin), render children directly without restaurant app shell padding or sidebars
   const isStandalone =
     pathname === "/landing" ||
     pathname === "/signin" ||
-    pathname.startsWith("/onboarding");
+    pathname.startsWith("/onboarding") ||
+    pathname.startsWith("/super-admin");
 
   if (isStandalone) {
     return (
