@@ -32,9 +32,7 @@ const createReservationSchema = z.object({
  */
 export async function createReservation(formData: FormData) {
   const ctx = await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = ctx.isSuperAdmin
-    ? (() => { throw new Error("Super Admin must select a restaurant"); })()
-    : ctx.restaurantId;
+  const restaurantId = await getActiveRestaurantId();
 
   const parsed = createReservationSchema.safeParse({
     customerName: formData.get("customerName"),

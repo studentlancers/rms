@@ -59,23 +59,24 @@ body {
   align-items: center;
   gap: 0.5rem;
   border-radius: 9999px;
-  background: rgba(0, 82, 255, 0.06);
-  padding: 0.25rem 0.75rem;
+  background: rgba(0, 82, 255, 0.08);
+  border: 1px solid rgba(0, 82, 255, 0.2);
+  padding: 0.3rem 0.85rem;
   font-family: var(--font-jetbrains-mono), monospace;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: #1d4ed8;
 }
 
 .design-section-label::before {
   content: "";
-  width: 0.4rem;
-  height: 0.4rem;
+  width: 0.45rem;
+  height: 0.45rem;
   border-radius: 9999px;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 82, 255, 0.15);
+  background: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
   animation: pulse-dot 2s infinite ease-in-out;
 }
 

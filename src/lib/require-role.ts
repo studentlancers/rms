@@ -11,6 +11,7 @@
 
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -141,13 +142,56 @@ export async function requireSuperAdmin(): Promise<SuperAdminContext> {
 
 /**
  * Returns the restaurantId for the caller's active organization.
- * Throws if there is no active org or if the caller is a Super Admin
- * (who is not scoped to any single restaurant).
+ * For regular users, returns their active organizationId.
+ * For Super Admins, resolves their active organization, their first organization,
+ * or falls back to the first available active organization in the database.
  */
 export async function getActiveRestaurantId(): Promise<string> {
   const ctx = await getRestaurantContext();
-  if (ctx.isSuperAdmin) {
-    throw new Error("Super Admin is not scoped to a single restaurant");
+  if (!ctx.isSuperAdmin) {
+    return (ctx as RestaurantContext).restaurantId;
   }
-  return (ctx as RestaurantContext).restaurantId;
+
+  // Super Admin resolution fallback chain:
+  // 1. Active member organization
+  try {
+    const member = await auth.api.getActiveMember({
+      headers: await headers(),
+    });
+    if (member?.organizationId) {
+      return member.organizationId;
+    }
+  } catch {
+    // Ignore fallback errors
+  }
+
+  // 2. User's listed organizations
+  try {
+    const userOrgs = await auth.api.listOrganizations({
+      headers: await headers(),
+    });
+    if (userOrgs && userOrgs.length > 0) {
+      return userOrgs[0].id;
+    }
+  } catch {
+    // Ignore fallback errors
+  }
+
+  // 3. First active organization in DB
+  const firstOrg = await db.organization.findFirst({
+    where: { isActive: true },
+  });
+  if (firstOrg) {
+    return firstOrg.id;
+  }
+
+  // 4. Any organization in DB
+  const anyOrg = await db.organization.findFirst();
+  if (anyOrg) {
+    return anyOrg.id;
+  }
+
+  throw new Error(
+    "No active restaurant. Please select or create a restaurant first."
+  );
 }

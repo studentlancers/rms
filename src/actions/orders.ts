@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireRole, getRestaurantContext } from "@/lib/require-role";
+import { requireRole, getRestaurantContext, getActiveRestaurantId } from "@/lib/require-role";
 import type { OrderStatus, OrderType } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -94,9 +94,7 @@ export async function createOrder(data: {
   taxRate?: number;
 }) {
   const ctx = await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = ctx.isSuperAdmin
-    ? (() => { throw new Error("Super Admin must select a restaurant"); })()
-    : ctx.restaurantId;
+  const restaurantId = await getActiveRestaurantId();
 
   const parsed = createOrderSchema.safeParse(data);
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
@@ -190,10 +188,8 @@ export async function createOrder(data: {
  * Returns all non-completed orders for the active restaurant.
  */
 export async function listLiveOrders() {
-  const ctx = await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = ctx.isSuperAdmin
-    ? (() => { throw new Error("Super Admin must select a restaurant"); })()
-    : ctx.restaurantId;
+  await requireRole(["owner", "admin", "staff"]);
+  const restaurantId = await getActiveRestaurantId();
 
   return db.order.findMany({
     where: {
@@ -213,10 +209,8 @@ export async function listOrders(filters?: {
   dateFrom?: Date;
   dateTo?: Date;
 }) {
-  const ctx = await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = ctx.isSuperAdmin
-    ? (() => { throw new Error("Super Admin must select a restaurant"); })()
-    : ctx.restaurantId;
+  await requireRole(["owner", "admin", "staff"]);
+  const restaurantId = await getActiveRestaurantId();
 
   return db.order.findMany({
     where: {
@@ -245,11 +239,7 @@ export async function updateOrderStatus(
   newStatus: OrderStatus
 ) {
   await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = await (async () => {
-    const ctx = await getRestaurantContext();
-    if (ctx.isSuperAdmin) throw new Error("Super Admin must select a restaurant");
-    return ctx.restaurantId;
-  })();
+  const restaurantId = await getActiveRestaurantId();
 
   const order = await db.order.findFirst({
     where: { id: orderId, restaurantId },

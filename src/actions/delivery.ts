@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireRole, getRestaurantContext } from "@/lib/require-role";
+import { requireRole, getRestaurantContext, getActiveRestaurantId } from "@/lib/require-role";
 import type { DeliveryStatus } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -30,10 +30,7 @@ const ALLOWED_DELIVERY_TRANSITIONS: Record<DeliveryStatus, DeliveryStatus[]> =
  */
 export async function assignDelivery(orderId: string, riderUserId: string) {
   await requireRole(["owner", "admin"]);
-  const ctx = await getRestaurantContext();
-  const restaurantId = ctx.isSuperAdmin
-    ? (() => { throw new Error("Super Admin must select a restaurant"); })()
-    : ctx.restaurantId;
+  const restaurantId = await getActiveRestaurantId();
 
   // Verify order belongs to this restaurant and is a DELIVERY type.
   const order = await db.order.findFirst({
@@ -72,10 +69,7 @@ export async function updateDeliveryStatus(
   etaMinutes?: number
 ) {
   await requireRole(["owner", "admin", "staff"]);
-  const ctx = await getRestaurantContext();
-  const restaurantId = ctx.isSuperAdmin
-    ? (() => { throw new Error("Super Admin must select a restaurant"); })()
-    : ctx.restaurantId;
+  const restaurantId = await getActiveRestaurantId();
 
   const delivery = await db.delivery.findFirst({
     where: { id: deliveryId, restaurantId },
@@ -116,12 +110,7 @@ export async function updateDeliveryStatus(
 export async function listActiveDeliveries() {
   try {
     await requireRole(["owner", "admin", "staff"]);
-    const ctx = await getRestaurantContext();
-    const restaurantId = ctx.isSuperAdmin
-      ? null
-      : ctx.restaurantId;
-
-    if (!restaurantId) return [];
+    const restaurantId = await getActiveRestaurantId();
 
     return await db.delivery.findMany({
       where: {
