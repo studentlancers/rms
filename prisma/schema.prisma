@@ -134,6 +134,8 @@ model MenuItem {
   isAvailable  Boolean        @default(true)
   /// JSON array of { name: string, priceModifier: number }
   variants     Json?
+  /// JSON array of { inventoryItemId: string, quantityRequired: number }
+  recipe       Json?
   category     Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   dailySpecials DailySpecial[]
 
@@ -191,6 +193,7 @@ model Order {
   customerName      String?
   customerPhone     String?
   paymentStatus     PaymentStatus @default(PENDING)
+  stockDeducted     Boolean       @default(false)
   razorpayOrderId   String?
   razorpayPaymentId String?
   createdAt         DateTime      @default(now())
@@ -393,6 +396,21 @@ model DailySpecial {
 
   @@index([restaurantId])
   @@index([restaurantId, date])
+}
+
+model StaffSalary {
+  id            String    @id @default(cuid())
+  restaurantId  String
+  userId        String
+  monthlySalary Float     @default(0)
+  advancePaid   Float     @default(0)
+  lastPaidDate  DateTime?
+  paymentStatus String    @default("Pending")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([restaurantId, userId])
+  @@index([restaurantId])
 }
 
 

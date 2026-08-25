@@ -37,7 +37,7 @@ import { useAuth } from "@/hooks/use-auth";
 const rawNavigationItems = [
   { name: "Overview", path: "", icon: LayoutDashboard },
   {
-    name: "Operations",
+    name: "Reservations",
     path: "/operations",
     icon: ShoppingBag,
   },
@@ -104,10 +104,12 @@ export default function Sidebar({
         icon: item.icon,
       }));
 
-  // Hide sidebar on public marketing landing page, sign-in page & onboarding page
+  // Hide sidebar on public marketing landing page, sign-in page, login page, accept-invitation page & onboarding page
   if (
     pathname === "/landing" ||
     pathname === "/signin" ||
+    pathname === "/login" ||
+    pathname.startsWith("/accept-invitation") ||
     pathname.startsWith("/onboarding")
   )
     return null;

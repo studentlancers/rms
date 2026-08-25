@@ -24,6 +24,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -196,6 +197,35 @@ export default function StaffBillingPage() {
     });
 
     toast.success(`Added ${selectedQty}x ${item.name}`);
+  };
+
+  const handleDecreaseCartQty = (menuItemId: string) => {
+    setCartItems((prev) =>
+      prev
+        .map((item) => {
+          if (item.menuItemId === menuItemId) {
+            return { ...item, quantity: item.quantity - 1 };
+          }
+          return item;
+        })
+        .filter((item) => item.quantity > 0)
+    );
+  };
+
+  const handleIncreaseCartQty = (menuItemId: string) => {
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.menuItemId === menuItemId) {
+          return { ...item, quantity: item.quantity + 1 };
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleRemoveCartItem = (menuItemId: string) => {
+    setCartItems((prev) => prev.filter((item) => item.menuItemId !== menuItemId));
+    toast.info("Item removed from bill");
   };
 
   // Dynamic central bill calculation for Quick Bill modal
@@ -617,15 +647,56 @@ export default function StaffBillingPage() {
               </div>
             </div>
 
-            {/* Cart Preview */}
-            <div className="space-y-1 pt-1 max-h-24 overflow-y-auto pr-1">
+            {/* Cart Preview with Item Deletion & Quantity Controls */}
+            <div className="space-y-1 pt-1 max-h-32 overflow-y-auto pr-1">
               <div className="text-[9px] font-bold text-slate-400 uppercase">Selected Items ({cartItems.length})</div>
-              {cartItems.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center text-xs p-1.5 bg-white rounded border border-slate-200">
-                  <span className="font-medium text-slate-800">{item.quantity}x {item.name}</span>
-                  <span className="font-mono font-bold text-slate-900">₹{(item.quantity * item.unitPrice).toFixed(2)}</span>
+              {cartItems.length === 0 ? (
+                <div className="text-center py-3 text-slate-400 text-xs italic">
+                  No items added yet. Choose a dish above and click Add.
                 </div>
-              ))}
+              ) : (
+                cartItems.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCartItem(item.menuItemId)}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        title="Remove item from bill"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="font-semibold text-slate-800">{item.name}</span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded-lg border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => handleDecreaseCartQty(item.menuItemId)}
+                          className="w-4 h-4 rounded text-slate-600 hover:bg-slate-200 flex items-center justify-center font-bold text-xs cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="font-mono font-bold text-xs text-slate-900 w-4 text-center">
+                          {item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleIncreaseCartQty(item.menuItemId)}
+                          className="w-4 h-4 rounded text-slate-600 hover:bg-slate-200 flex items-center justify-center font-bold text-xs cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <span className="font-mono font-bold text-slate-900 min-w-[50px] text-right">
+                        ₹{(item.quantity * item.unitPrice).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

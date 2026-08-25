@@ -11,12 +11,14 @@ import { Plus, ChevronDown, Sparkles, ChevronRight, Loader2 } from "lucide-react
 import { toast } from "sonner";
 import { getDailySales } from "@/actions/analytics";
 import { createReservation } from "@/actions/reservations";
+import { FloorPlanModal } from "@/components/modals/floor-plan-modal";
 
 export default function OverviewPage() {
   const params = useParams();
   const slug = (params?.slug as string) || "restaurant";
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isInsightsModalOpen, setIsInsightsModalOpen] = useState(false);
+  const [isFloorPlanOpen, setIsFloorPlanOpen] = useState(false);
 
   // Form state for New Booking
   const [guestName, setGuestName] = useState("");
@@ -135,6 +137,13 @@ export default function OverviewPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsFloorPlanOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-slate-900 hover:bg-black text-white text-xs font-semibold shadow-xs transition-all cursor-pointer border-none"
+          >
+            <span>View floor plan</span>
+          </button>
+
           <button
             onClick={() => setIsBookingModalOpen(true)}
             className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer border-none"
@@ -383,6 +392,11 @@ export default function OverviewPage() {
           </div>
         </div>
       </Modal>
+
+      <FloorPlanModal
+        isOpen={isFloorPlanOpen}
+        onClose={() => setIsFloorPlanOpen(false)}
+      />
     </div>
   );
 }

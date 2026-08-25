@@ -279,6 +279,60 @@ export async function updateOrderStatus(
       }
     }
 
+    // Automatic Inventory Deduction when Order transitions to COMPLETED (Idempotent)
+    if (newStatus === "COMPLETED" && !order.stockDeducted) {
+      const orderItems = Array.isArray(order.items) ? (order.items as any[]) : [];
+      const menuItemIds = orderItems.map((i) => i.menuItemId).filter(Boolean);
+
+      if (menuItemIds.length > 0) {
+        const menuItems = await tx.menuItem.findMany({
+          where: { id: { in: menuItemIds }, restaurantId },
+          select: { id: true, recipe: true },
+        });
+
+        const recipeMap = new Map(menuItems.map((m) => [m.id, m.recipe]));
+
+        for (const item of orderItems) {
+          const recipe: any = recipeMap.get(item.menuItemId);
+          if (Array.isArray(recipe)) {
+            for (const ing of recipe) {
+              if (ing.inventoryItemId && ing.quantityRequired > 0) {
+                const totalDeduction = ing.quantityRequired * (item.quantity || 1);
+
+                const invItem = await tx.inventoryItem.findFirst({
+                  where: { id: ing.inventoryItemId, restaurantId },
+                });
+
+                if (invItem) {
+                  const newQty = Math.max(0, invItem.quantity - totalDeduction);
+                  await tx.inventoryItem.update({
+                    where: { id: invItem.id },
+                    data: { quantity: newQty },
+                  });
+
+                  await tx.stockMovement.create({
+                    data: {
+                      restaurantId,
+                      inventoryItemId: invItem.id,
+                      quantityChange: -totalDeduction,
+                      type: "USAGE",
+                      reason: `Order #${orderId.slice(-4).toUpperCase()} completion`,
+                      createdById: ctx.userId,
+                    },
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: { stockDeducted: true },
+      });
+    }
+
     revalidatePath("/dashboard", "layout");
     revalidatePath("/staff/tables");
     return updated;

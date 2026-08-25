@@ -1,12 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Lock, ArrowLeft, ArrowRight, Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react";
 import { useAuthActions } from "@/lib/auth-action";
+import { authClient } from "@/lib/auth-client";
 
 export default function SignInPage() {
+  const router = useRouter();
   const { signIn, signUp } = useAuthActions();
+  const { data: session, isPending: isSessionLoading } = authClient.useSession();
+
   const [mode, setMode] = useState<"signin" | "signUp">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -15,13 +20,19 @@ export default function SignInPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (!isSessionLoading && session?.user) {
+      router.replace("/dashboard");
+    }
+  }, [session, isSessionLoading, router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     if (mode === "signin") {
-      const res = await signIn(email, password);
+      const res = await signIn(email, password, { redirectTo: "/dashboard" });
       if (!res.success && res.error) {
         setError(res.error.message || "Unable to sign in.");
       }

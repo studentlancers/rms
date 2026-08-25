@@ -22,7 +22,6 @@ export function OrganizationPeople({
   return (
     <div className={cn("flex flex-col gap-4 md:gap-6", className)} {...props}>
       <OrganizationMembers />
-      <OrganizationInvitations />
     </div>
   )
 }

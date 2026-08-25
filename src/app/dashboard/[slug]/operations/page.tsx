@@ -24,6 +24,7 @@ import {
 } from "@/actions/reservations";
 import { listTables } from "@/actions/tables";
 import { getBillingSettings, updateBillingSettings } from "@/actions/billing-settings";
+import { FloorPlanModal } from "@/components/modals/floor-plan-modal";
 
 export default function OperationsPage() {
   // Data States
@@ -193,12 +194,12 @@ export default function OperationsPage() {
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="design-section-label mb-3">SERVICE CONTROL</div>
+          <div className="design-section-label mb-3">RESERVATIONS & FLOOR CONTROL</div>
           <h1 className="font-display text-3xl md:text-4xl font-semibold tracking-tight text-slate-900">
-            Operations
+            Reservations & Floor Status
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Keep today&apos;s floor moving from one calm command centre.
+            Manage table bookings, guest seating, and floor status in real time.
           </p>
         </div>
 
@@ -604,58 +605,11 @@ export default function OperationsPage() {
         </form>
       </Modal>
 
-      {/* Modal: Interactive Floor Plan */}
-      <Modal
+      {/* Modal: Live Floor Plan */}
+      <FloorPlanModal
         isOpen={isFloorPlanOpen}
         onClose={() => setIsFloorPlanOpen(false)}
-        title="Interactive Floor Plan — Live Telemetry"
-        subtitle="Real-time statuses of dining tables."
-        className="max-w-2xl"
-      >
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-6 bg-slate-50 border border-slate-200 rounded-2xl">
-            {tables.length === 0 ? (
-              <div className="col-span-4 text-center py-6 text-slate-400 text-xs">
-                No tables configured in database yet.
-              </div>
-            ) : (
-              tables.map((table) => {
-                const isOccupied = table.status === "OCCUPIED";
-                const isReserved = table.status === "RESERVED";
-
-                return (
-                  <div
-                    key={table.id}
-                    className={`p-4 rounded-xl border flex flex-col items-center justify-center transition-all ${
-                      isOccupied
-                        ? "bg-blue-50 border-blue-200 text-blue-900"
-                        : isReserved
-                        ? "bg-amber-50 border-amber-200 text-amber-900"
-                        : "bg-white border-slate-200 text-slate-700"
-                    }`}
-                  >
-                    <MapPin className="w-4 h-4 mb-1 opacity-70" />
-                    <span className="font-bold text-sm">Table {table.tableNumber}</span>
-                    <span className="text-[10px] opacity-75">{table.capacity} seats</span>
-                    <span className="text-[9px] font-semibold mt-1 uppercase tracking-wider">
-                      {table.status}
-                    </span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              onClick={() => setIsFloorPlanOpen(false)}
-              className="px-4 py-2 h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl border-none cursor-pointer"
-            >
-              Close Floor Plan
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      />
     </div>
   );
 }

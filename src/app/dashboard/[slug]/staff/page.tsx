@@ -30,6 +30,7 @@ import {
   Users,
   CreditCard,
   Eye,
+  EyeOff,
   Mail,
   Loader2,
   MoreVertical,
@@ -38,16 +39,19 @@ import {
   Trash2,
   XCircle,
   Clock,
+  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   listStaff,
   listPendingInvitations,
-  inviteStaff,
   updateStaffRole,
   removeStaff,
   cancelInvitation,
+  createStaffAccount,
+  listStaffSalaries,
+  updateStaffSalary,
 } from "@/actions/staff";
 
 export interface StaffMember {
@@ -75,35 +79,51 @@ export default function StaffPage() {
   const params = useParams();
   const slug = (params?.slug as string) || "restaurant";
 
-  const [activeTab, setActiveTab] = useState<"attendance" | "invitations" | "salary">("attendance");
+  const [activeTab, setActiveTab] = useState<"attendance" | "salary">("attendance");
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
   // Dynamic Data States
   const [members, setMembers] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
+  const [salaries, setSalaries] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Invite Form State
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "staff">("staff");
+  // Edit Salary Modal State
+  const [isEditSalaryOpen, setIsEditSalaryOpen] = useState(false);
+  const [editingStaffUser, setEditingStaffUser] = useState<any | null>(null);
+  const [monthlySalaryInput, setMonthlySalaryInput] = useState("0");
+  const [advancePaidInput, setAdvancePaidInput] = useState("0");
+  const [paymentStatusInput, setPaymentStatusInput] = useState("Pending");
+  const [isSavingSalary, setIsSavingSalary] = useState(false);
 
-  // Load members and invitations from Better Auth
+  // Add Staff Form State
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [role, setRole] = useState<"admin" | "staff">("staff");
+
+  // Load members, invitations, and salaries from database
   const loadStaffData = async (silent = false) => {
     try {
       if (!silent) setIsLoading(true);
-      const [staffRes, invRes] = await Promise.allSettled([
+      const [staffRes, invRes, salaryRes] = await Promise.allSettled([
         listStaff(),
         listPendingInvitations(),
+        listStaffSalaries(),
       ]);
 
       const rawStaff: any = staffRes.status === "fulfilled" ? staffRes.value : null;
       const fetchedMembers = Array.isArray(rawStaff) ? rawStaff : (rawStaff?.members || []);
       const fetchedInvitations = invRes.status === "fulfilled" ? invRes.value : [];
+      const fetchedSalaries = salaryRes.status === "fulfilled" ? salaryRes.value : [];
 
       setMembers(fetchedMembers || []);
       setInvitations(fetchedInvitations || []);
+      setSalaries(fetchedSalaries || []);
     } catch (err: any) {
       console.error("Error loading staff roster:", err);
       if (!silent) toast.error(err.message || "Failed to load staff roster");
@@ -123,29 +143,83 @@ export default function StaffPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Submit Invite Staff Form
-  const handleInviteStaffSubmit = async (e: React.FormEvent) => {
+  const handleOpenEditSalary = (record: any) => {
+    setEditingStaffUser(record);
+    setMonthlySalaryInput(record.monthlySalary.toString());
+    setAdvancePaidInput(record.advancePaid.toString());
+    setPaymentStatusInput(record.paymentStatus || "Pending");
+    setIsEditSalaryOpen(true);
+  };
+
+  const handleSaveSalarySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteEmail) {
+    if (!editingStaffUser) return;
+
+    const mSal = parseFloat(monthlySalaryInput) || 0;
+    const adv = parseFloat(advancePaidInput) || 0;
+
+    if (mSal < 0 || adv < 0) {
+      toast.error("Salary amounts cannot be negative");
+      return;
+    }
+
+    setIsSavingSalary(true);
+    try {
+      await updateStaffSalary(editingStaffUser.userId, {
+        monthlySalary: mSal,
+        advancePaid: adv,
+        paymentStatus: paymentStatusInput,
+      });
+      toast.success(`Salary record updated for ${editingStaffUser.name}!`);
+      setIsEditSalaryOpen(false);
+      await loadStaffData(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update salary");
+    } finally {
+      setIsSavingSalary(false);
+    }
+  };
+
+  // Submit Add Staff Form (Direct Creation)
+  const handleAddStaffSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error("Please enter full name");
+      return;
+    }
+    if (!email.trim()) {
       toast.error("Please enter a valid email address");
+      return;
+    }
+    if (password.length < 8) {
+      toast.error("Password must be at least 8 characters long");
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
       return;
     }
 
     setIsSubmitting(true);
     try {
       const formData = new FormData();
-      formData.append("email", inviteEmail);
-      formData.append("role", inviteRole);
+      formData.append("name", name.trim());
+      formData.append("email", email.trim());
+      formData.append("password", password);
+      formData.append("role", role);
 
-      await inviteStaff(formData);
-      toast.success(`Invitation sent to ${inviteEmail}!`);
+      const res = await createStaffAccount(formData);
+      toast.success(res.message || "Staff account created successfully.");
 
       setIsAddStaffOpen(false);
-      setInviteEmail("");
-      setInviteRole("staff");
+      setName("");
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+      setRole("staff");
       await loadStaffData(true);
     } catch (err: any) {
-      toast.error(err.message || "Failed to send invitation");
+      toast.error(err.message || "Failed to create staff account");
     } finally {
       setIsSubmitting(false);
     }
@@ -249,7 +323,7 @@ export default function StaffPage() {
           className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all self-start md:self-auto cursor-pointer h-auto border-none"
         >
           <Plus className="w-4 h-4" />
-          <span>Invite team member</span>
+          <span>Add Staff</span>
         </Button>
       </div>
 
@@ -261,18 +335,18 @@ export default function StaffPage() {
           subtext="active organization roster"
         />
         <StatCard
-          label="PENDING INVITATIONS"
-          value={isLoading ? "..." : `${invitations.length} Pending`}
-          subtext="email invites sent"
+          label="STAFF ACCOUNTS"
+          value={isLoading ? "..." : `${members.filter((m) => m.role === "staff" || m.role === "member").length} Staff`}
+          subtext="direct accounts created"
         />
         <StatCard
           label="TOTAL PAYROLL"
-          value="₹2,77,000"
-          subtext="monthly budget"
+          value={isLoading ? "..." : `₹${salaries.reduce((acc, curr) => acc + (curr.monthlySalary || 0), 0).toLocaleString("en-IN")}`}
+          subtext="active monthly budget"
         />
       </div>
 
-      {/* Tab Selectors: People Roster | Pending Invites | Salary */}
+      {/* Tab Selectors: Active Roster | Salary Management */}
       <div className="flex items-center gap-3 border-b border-slate-200/80 pb-3 overflow-x-auto">
         <button
           onClick={() => setActiveTab("attendance")}
@@ -288,19 +362,6 @@ export default function StaffPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab("invitations")}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
-            activeTab === "invitations"
-              ? "bg-blue-50 text-blue-600 border border-blue-200/60 shadow-2xs"
-              : "text-slate-500 hover:bg-slate-100"
-          )}
-        >
-          <Mail className="w-4 h-4" />
-          <span>Pending Invitations ({invitations.length})</span>
-        </button>
-
-        <button
           onClick={() => setActiveTab("salary")}
           className={cn(
             "px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0",
@@ -310,7 +371,7 @@ export default function StaffPage() {
           )}
         >
           <CreditCard className="w-4 h-4" />
-          <span>Salary (Read-Only)</span>
+          <span>Salary Management</span>
         </button>
       </div>
 
@@ -511,14 +572,28 @@ export default function StaffPage() {
                       </TableCell>
 
                       <TableCell className="py-4 px-4 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCancelInvitation(inv.id, inv.email)}
-                          className="h-8 text-xs text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-lg cursor-pointer"
-                        >
-                          <XCircle className="w-3.5 h-3.5 mr-1" /> Cancel Invite
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const link = `${window.location.origin}/accept-invitation/${inv.id}`;
+                              navigator.clipboard.writeText(link);
+                              toast.success(`Invitation link copied for ${inv.email}!`);
+                            }}
+                            className="h-8 text-xs text-blue-600 border-blue-200 hover:bg-blue-50 rounded-lg cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5 mr-1" /> Copy Link
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCancelInvitation(inv.id, inv.email)}
+                            className="h-8 text-xs text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-lg cursor-pointer"
+                          >
+                            <XCircle className="w-3.5 h-3.5 mr-1" /> Cancel Invite
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -529,7 +604,7 @@ export default function StaffPage() {
         </div>
       )}
 
-      {/* Tab 3: Read-Only Salary Management */}
+      {/* Tab 2: Live Salary Management */}
       {!isLoading && activeTab === "salary" && (
         <div className="design-surface p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -538,11 +613,11 @@ export default function StaffPage() {
                 SALARY & DISBURSEMENTS
               </div>
               <h3 className="text-xl font-bold text-slate-900 mt-0.5">
-                Salary Management (Read-Only)
+                Salary Management
               </h3>
             </div>
             <span className="text-xs text-slate-500 font-mono bg-slate-100 px-3 py-1.5 rounded-lg self-start sm:self-auto">
-              Amounts in ₹ (INR)
+              Amounts in ₹ (INR) — PostgreSQL Live Database
             </span>
           </div>
 
@@ -555,45 +630,191 @@ export default function StaffPage() {
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ADVANCE PAID (₹)</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">REMAINING SALARY (₹)</TableHead>
                 <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">LAST PAID DATE</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">PAYMENT STATUS</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STATUS</TableHead>
+                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="divide-y divide-slate-100 text-xs">
-              {salaryRecords.map((record) => (
-                <TableRow key={record.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
-                  <TableCell className="py-4 px-4 font-semibold text-slate-900">{record.name}</TableCell>
-                  <TableCell className="py-4 px-4 text-slate-600 font-medium">{record.role}</TableCell>
-                  <TableCell className="py-4 px-4 text-right font-mono font-semibold text-slate-900">₹{record.monthlySalary.toLocaleString("en-IN")}</TableCell>
-                  <TableCell className="py-4 px-4 text-right font-mono text-amber-600">₹{record.advancePaid.toLocaleString("en-IN")}</TableCell>
-                  <TableCell className="py-4 px-4 text-right font-mono font-bold text-blue-600">₹{record.remainingSalary.toLocaleString("en-IN")}</TableCell>
-                  <TableCell className="py-4 px-4 font-mono text-slate-500">{record.lastPaidDate}</TableCell>
-                  <TableCell className="py-4 px-4"><StatusBadge status={record.paymentStatus} /></TableCell>
+              {salaries.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
+                    No staff salary records configured yet.
+                  </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                salaries.map((record) => (
+                  <TableRow key={record.userId} className="hover:bg-slate-50/80 transition-colors border-slate-100">
+                    <TableCell className="py-4 px-4 font-semibold text-slate-900">{record.name}</TableCell>
+                    <TableCell className="py-4 px-4 text-blue-600 font-medium uppercase text-[11px]">{record.role}</TableCell>
+                    <TableCell className="py-4 px-4 text-right font-mono font-semibold text-slate-900">₹{record.monthlySalary.toLocaleString("en-IN")}</TableCell>
+                    <TableCell className="py-4 px-4 text-right font-mono text-amber-600">₹{record.advancePaid.toLocaleString("en-IN")}</TableCell>
+                    <TableCell className="py-4 px-4 text-right font-mono font-bold text-blue-600">₹{record.remainingSalary.toLocaleString("en-IN")}</TableCell>
+                    <TableCell className="py-4 px-4 font-mono text-slate-500">{record.lastPaidDate}</TableCell>
+                    <TableCell className="py-4 px-4"><StatusBadge status={record.paymentStatus} /></TableCell>
+                    <TableCell className="py-4 px-4 text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenEditSalary(record)}
+                        className="h-8 text-xs text-blue-600 border-blue-200 hover:bg-blue-50 rounded-lg cursor-pointer"
+                      >
+                        Edit / Pay
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </div>
       )}
 
-      {/* Modal: Add / Invite Team Member */}
+      {/* Modal: Edit Staff Salary / Record Disbursement */}
+      <Modal
+        isOpen={isEditSalaryOpen}
+        onClose={() => setIsEditSalaryOpen(false)}
+        title={`Manage Salary — ${editingStaffUser?.name || "Staff Member"}`}
+        subtitle="Set base monthly salary, record advance payments, and update disbursement status."
+      >
+        <form onSubmit={handleSaveSalarySubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Monthly Base Salary (₹) *
+            </label>
+            <Input
+              type="number"
+              min="0"
+              required
+              value={monthlySalaryInput}
+              onChange={(e) => setMonthlySalaryInput(e.target.value)}
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono font-bold"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Advance Paid (₹)
+            </label>
+            <Input
+              type="number"
+              min="0"
+              value={advancePaidInput}
+              onChange={(e) => setAdvancePaidInput(e.target.value)}
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono font-bold text-amber-600"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Disbursement Status *
+            </label>
+            <select
+              value={paymentStatusInput}
+              onChange={(e) => setPaymentStatusInput(e.target.value)}
+              className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white font-medium"
+            >
+              <option value="Pending">Pending</option>
+              <option value="Paid">Disbursed (Paid)</option>
+              <option value="Partial">Partial Payment</option>
+            </select>
+          </div>
+
+          <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsEditSalaryOpen(false)}
+              className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSavingSalary}
+              className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold border-none cursor-pointer"
+            >
+              {isSavingSalary ? "Saving..." : "Save Salary Record"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Add Staff Member */}
       <Modal
         isOpen={isAddStaffOpen}
         onClose={() => setIsAddStaffOpen(false)}
-        title="Invite Team Member"
-        subtitle="Send an email invitation via Better Auth."
+        title="Add Staff Member"
+        subtitle="Create a direct staff account with email & password."
       >
-        <form onSubmit={handleInviteStaffSubmit} className="space-y-4">
+        <form onSubmit={handleAddStaffSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Staff Email Address *
+              Full Name *
+            </label>
+            <Input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Rahul Sharma"
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Email Address *
             </label>
             <Input
               type="email"
               required
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="e.g. staff@restaurant.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="e.g. rahul@gmail.com"
               className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Password *
+            </label>
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Confirm Password *
+            </label>
+            <Input
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={8}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter password"
+              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs"
             />
           </div>
 
@@ -602,8 +823,8 @@ export default function StaffPage() {
               Organization Role *
             </label>
             <select
-              value={inviteRole}
-              onChange={(e: any) => setInviteRole(e.target.value)}
+              value={role}
+              onChange={(e: any) => setRole(e.target.value)}
               className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
             >
               <option value="staff">Staff (Operational POS & Kitchen Access)</option>
@@ -622,10 +843,16 @@ export default function StaffPage() {
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !inviteEmail}
+              disabled={isSubmitting || !name || !email || !password || !confirmPassword}
               className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold border-none cursor-pointer"
             >
-              {isSubmitting ? "Sending..." : "Send Invitation"}
+              {isSubmitting ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating...
+                </span>
+              ) : (
+                "Create Staff Account"
+              )}
             </Button>
           </div>
         </form>

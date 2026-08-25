@@ -21,7 +21,7 @@ export default function OrganizationSettingsPage() {
           Restaurant Settings
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Manage restaurant details, staff roles, invitations, and default bill charges.
+          Manage restaurant details, staff roles, and default bill charges.
         </p>
       </div>
 

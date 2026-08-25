@@ -100,10 +100,12 @@ export default function Header({
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
-  // Hide top app header on public marketing landing page, sign-in page & onboarding page
+  // Hide top app header on public marketing landing page, sign-in page, login page, accept-invitation page & onboarding page
   if (
     pathname === "/landing" ||
     pathname === "/signin" ||
+    pathname === "/login" ||
+    pathname.startsWith("/accept-invitation") ||
     pathname.startsWith("/onboarding")
   )
     return null;
