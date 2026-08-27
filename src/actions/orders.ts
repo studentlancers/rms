@@ -238,7 +238,7 @@ export async function updateOrderStatus(
   orderId: string,
   newStatus: OrderStatus
 ) {
-  await requireRole(["owner", "admin", "staff"]);
+  const ctx = await requireRole(["owner", "admin", "staff"]);
   const restaurantId = await getActiveRestaurantId();
 
   const order = await db.order.findFirst({

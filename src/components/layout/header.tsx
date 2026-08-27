@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import {
   Bell,
@@ -22,6 +22,11 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  listNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from "@/actions/notifications";
 
 interface NotificationItem {
   id: string;
@@ -46,8 +51,9 @@ export default function Header({
   onMobileMenuToggle,
 }: HeaderProps) {
   const pathname = usePathname();
-  const { activeOrg } = useAuth()
+  const { activeOrg } = useAuth();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   const displayDate =
     dateText ||
@@ -65,37 +71,55 @@ export default function Header({
     venueText ||
     `${activeOrg?.name || "Grand Bistro"} · ${isStaff ? "Staff Workspace" : "Main Operations"}`;
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: "1",
-      title: "Low Inventory Alert",
-      description: "Atlantic salmon is below threshold (3.2 kg remaining).",
-      time: "2 min ago",
-      unread: true,
-      type: "warning",
-    },
-    {
-      id: "2",
-      title: "Shift Roster Confirmed",
-      description: "Maya Patel confirmed on-shift for Lunch Peak service.",
-      time: "10 min ago",
-      unread: true,
-      type: "success",
-    },
-    {
-      id: "3",
-      title: "Mise AI Forecast",
-      description: "+18% bump in 2-top covers predicted at 12:30 PM today.",
-      time: "25 min ago",
-      unread: false,
-      type: "info",
-    },
-  ]);
+  const loadNotificationsData = async () => {
+    try {
+      const data = await listNotifications();
+      setNotifications(
+        data.map((n) => ({
+          id: n.id,
+          title: n.title,
+          description: n.message,
+          time: new Date(n.createdAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          unread: !n.isRead,
+          type: n.type as "warning" | "success" | "info",
+        }))
+      );
+    } catch (err) {
+      console.error("Error fetching notifications:", err);
+    }
+  };
 
-  const markAllAsRead = () => {
+  useEffect(() => {
+    loadNotificationsData();
+    const interval = setInterval(loadNotificationsData, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleMarkItemRead = async (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, unread: false } : n))
+    );
+    try {
+      await markNotificationRead(id);
+      await loadNotificationsData();
+    } catch (err) {
+      console.error("Error marking notification read:", err);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
     setNotifications((prev) =>
       prev.map((item) => ({ ...item, unread: false }))
     );
+    try {
+      await markAllNotificationsRead();
+      await loadNotificationsData();
+    } catch (err) {
+      console.error("Error marking all read:", err);
+    }
   };
 
   const unreadCount = notifications.filter((n) => n.unread).length;
@@ -186,7 +210,7 @@ export default function Header({
                 <Button
                   variant="ghost"
                   size="xs"
-                  onClick={markAllAsRead}
+                  onClick={handleMarkAllAsRead}
                   className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:bg-blue-50/60 cursor-pointer"
                 >
                   <CheckCheck className="w-3.5 h-3.5" />
@@ -202,13 +226,7 @@ export default function Header({
               {notifications.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() =>
-                    setNotifications((prev) =>
-                      prev.map((n) =>
-                        n.id === item.id ? { ...n, unread: false } : n
-                      )
-                    )
-                  }
+                  onClick={() => handleMarkItemRead(item.id)}
                   className={cn(
                     "p-3.5 flex items-start gap-3 hover:bg-slate-50 transition-colors cursor-pointer",
                     item.unread ? "bg-blue-50/30" : "bg-white"

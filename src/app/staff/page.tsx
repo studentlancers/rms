@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableHeader,
@@ -16,8 +15,6 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import {
-  Plus,
-  ChevronDown,
   Sparkles,
   ChevronRight,
   UtensilsCrossed,
@@ -26,81 +23,143 @@ import {
   Receipt,
   Eye,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
-
-const recentOrders = [
-  {
-    id: "ORD-2041",
-    table: "Table 04",
-    type: "Dine-in",
-    waiter: "Alex Rivera",
-    items: "2x Ribeye Steak, 1x Truffle Fries, 2x Pinot Noir",
-    total: "₹1,425.00",
-    status: "In Progress",
-    time: "5 mins ago",
-  },
-  {
-    id: "ORD-2040",
-    table: "Table 02",
-    type: "Dine-in",
-    waiter: "Sarah Connor",
-    items: "1x Salmon Risotto, 1x Caesar Salad, 2x Sparkling Water",
-    total: "₹680.00",
-    status: "Served",
-    time: "12 mins ago",
-  },
-  {
-    id: "ORD-2039",
-    table: "Takeout #12",
-    type: "Takeout",
-    waiter: "Counter POS",
-    items: "3x Margherita Pizza, 3x Gelato, 3x Iced Teas",
-    total: "₹952.00",
-    status: "Warning",
-    time: "18 mins ago",
-  },
-  {
-    id: "ORD-2038",
-    table: "Table 08",
-    type: "Dine-in",
-    waiter: "Alex Rivera",
-    items: "4x Beef Burger, 4x Craft Beer",
-    total: "₹1,180.00",
-    status: "Completed",
-    time: "32 mins ago",
-  },
-];
-
-const recentActivity = [
-  {
-    id: 1,
-    time: "12:42 PM",
-    text: "Order #ORD-2041 sent to kitchen for Table 04",
-    icon: UtensilsCrossed,
-  },
-  {
-    id: 2,
-    time: "12:38 PM",
-    text: "Table 02 status changed to 'Occupied' (3 Guests)",
-    icon: Users,
-  },
-  {
-    id: 3,
-    time: "12:25 PM",
-    text: "Bill #INV-8812 printed for Table 08 (₹1,180.00 - Paid via UPI)",
-    icon: Receipt,
-  },
-  {
-    id: 4,
-    time: "12:10 PM",
-    text: "Table 06 marked 'Cleaning Completed' by Sarah",
-    icon: CheckCircle2,
-  },
-];
+import { toast } from "sonner";
+import { listOrders } from "@/actions/orders";
+import { listTables } from "@/actions/tables";
 
 export default function StaffDashboardPage() {
-  const [selectedOrder, setSelectedOrder] = useState<typeof recentOrders[0] | null>(null);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [tables, setTables] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Fetch telemetry from PostgreSQL database
+  const loadStaffDashboardData = async (silent = false) => {
+    try {
+      if (!silent) setIsLoading(true);
+      const [fetchedOrders, fetchedTables] = await Promise.all([
+        listOrders(),
+        listTables(),
+      ]);
+
+      setOrders(fetchedOrders || []);
+      setTables(fetchedTables || []);
+    } catch (err: any) {
+      console.error("Error loading staff dashboard telemetry:", err);
+      if (!silent) toast.error(err.message || "Failed to load staff telemetry");
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStaffDashboardData();
+
+    // 5-second polling interval matching existing staff modules
+    const interval = setInterval(() => {
+      loadStaffDashboardData(true);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Today's Sales & Orders Metrics
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (!o.createdAt) return false;
+      const dStr = new Date(o.createdAt).toISOString().slice(0, 10);
+      return dStr === todayStr;
+    });
+  }, [orders, todayStr]);
+
+  const completedToday = useMemo(() => {
+    return todayOrders.filter((o) => o.status === "COMPLETED");
+  }, [todayOrders]);
+
+  const shiftSalesTotal = useMemo(() => {
+    return completedToday.reduce((sum, o) => sum + (o.total || 0), 0);
+  }, [completedToday]);
+
+  // Active Tables Metrics
+  const totalTables = tables.length;
+  const occupiedTables = tables.filter((t) => t.status === "OCCUPIED").length;
+  const availableTables = tables.filter((t) => t.status === "FREE").length;
+  const capacityPercent = totalTables > 0 ? Math.round((occupiedTables / totalTables) * 100) : 0;
+
+  // Pending Bills Metrics
+  const pendingBillOrders = useMemo(() => {
+    return orders.filter(
+      (o) => o.paymentStatus === "PENDING" && o.status !== "CANCELLED"
+    );
+  }, [orders]);
+
+  const pendingBillTotal = useMemo(() => {
+    return pendingBillOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+  }, [pendingBillOrders]);
+
+  // Recent Orders (Top 5)
+  const recentOrdersList = useMemo(() => {
+    return orders.slice(0, 5);
+  }, [orders]);
+
+  // Derived Activity Feed from real orders & tables
+  const activityFeed = useMemo(() => {
+    const activities: Array<{ id: string; time: string; text: string; icon: any }> = [];
+
+    orders.slice(0, 4).forEach((ord) => {
+      const orderToken = `#ORD-${ord.id.slice(-4).toUpperCase()}`;
+      const timeStr = ord.createdAt
+        ? new Date(ord.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : "Just now";
+
+      if (ord.status === "PENDING") {
+        activities.push({
+          id: `ord-pending-${ord.id}`,
+          time: timeStr,
+          text: `New order ${orderToken} created for ${ord.table ? `Table ${ord.table.tableNumber}` : ord.orderType}`,
+          icon: UtensilsCrossed,
+        });
+      } else if (ord.status === "COMPLETED") {
+        activities.push({
+          id: `ord-comp-${ord.id}`,
+          time: timeStr,
+          text: `Bill ${orderToken} settled (₹${ord.total?.toFixed(2)} - ${ord.paymentStatus})`,
+          icon: Receipt,
+        });
+      } else {
+        activities.push({
+          id: `ord-status-${ord.id}`,
+          time: timeStr,
+          text: `Order ${orderToken} marked '${ord.status}'`,
+          icon: CheckCircle2,
+        });
+      }
+    });
+
+    tables.filter((t) => t.status === "OCCUPIED").slice(0, 2).forEach((tbl) => {
+      activities.push({
+        id: `tbl-occ-${tbl.id}`,
+        time: "Active shift",
+        text: `Table ${tbl.tableNumber} status updated to 'Occupied'`,
+        icon: Users,
+      });
+    });
+
+    return activities.slice(0, 4);
+  }, [orders, tables]);
+
+  // Items formatter for JSON items blob
+  const formatItemsSummary = (items: any) => {
+    if (!items || !Array.isArray(items)) return "Standard Order Items";
+    return items
+      .map((i: any) => `${i.quantity || 1}x ${i.name || "Item"}`)
+      .join(", ");
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -109,47 +168,33 @@ export default function StaffDashboardPage() {
         <div>
           <div className="design-section-label mb-3">STAFF SERVICE OVERVIEW</div>
           <h1 className="font-display text-3xl md:text-4xl font-semibold tracking-tight text-slate-900">
-            Good morning, Alex.
+            Shift Operations Console
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Here&apos;s how your shift service is performing today.
+            Real-time telemetry for shift sales, table seating, and active customer orders.
           </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors">
-            <span>Shift Today</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </button>
-
-          <Link href="/staff/menu">
-            <button className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer">
-              <Plus className="w-4 h-4" />
-              <span>New Order</span>
-            </button>
-          </Link>
         </div>
       </div>
 
-      {/* Top 3 Stat Cards (Matching Owner Dashboard format) */}
+      {/* Top 3 Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <StatCard
           label="SHIFT SALES"
-          value="₹14,250.00"
-          subtext="vs. yesterday shift"
-          trend={{ value: "↗ +14.2%", isPositive: true }}
+          value={isLoading ? "..." : `₹${shiftSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+          subtext="today's completed POS sales"
+          trend={{ value: "Live POS", isPositive: true }}
         />
         <StatCard
           label="ACTIVE TABLES"
-          value="12 / 18"
-          subtext="66% floor capacity"
-          trend={{ value: "↗ 6 Available", isPositive: true }}
+          value={isLoading ? "..." : `${occupiedTables} / ${totalTables}`}
+          subtext={`${capacityPercent}% floor capacity occupied`}
+          trend={{ value: `${availableTables} Available`, isPositive: true }}
         />
         <StatCard
           label="PENDING BILLS"
-          value="3 Orders"
+          value={isLoading ? "..." : `${pendingBillOrders.length} Orders`}
           subtext="Awaiting cashier settlement"
-          trend={{ value: "₹3,057.00", isPositive: false }}
+          trend={{ value: `₹${pendingBillTotal.toFixed(2)}`, isPositive: false }}
         />
       </div>
 
@@ -164,21 +209,16 @@ export default function StaffDashboardPage() {
               </div>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-bold tracking-tight text-slate-900">
-                  48 Covers Served
+                  {isLoading ? "..." : `${todayOrders.length} Orders Served Today`}
                 </span>
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
-                  ↗ 12.5%
+                  Live DB
                 </span>
               </div>
             </div>
-
-            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600 hover:bg-slate-100 transition-colors">
-              <span>Today</span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
-            </button>
           </div>
 
-          {/* SVG Wave Chart matching Owner Overview */}
+          {/* SVG Wave Chart */}
           <div className="relative h-44 w-full pt-4">
             <svg
               className="w-full h-full overflow-visible"
@@ -283,7 +323,7 @@ export default function StaffDashboardPage() {
             <Table>
               <TableHeader className="bg-slate-50/80">
                 <TableRow>
-                  <TableHead className="text-xs font-semibold text-slate-600">Order ID</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-600">Order Token</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-600">Table / Type</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-600 hidden sm:table-cell">Items Summary</TableHead>
                   <TableHead className="text-xs font-semibold text-slate-600">Total</TableHead>
@@ -292,40 +332,61 @@ export default function StaffDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentOrders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-slate-50/60 transition-colors">
-                    <TableCell className="font-mono text-xs font-bold text-slate-900">
-                      {order.id}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-xs font-semibold text-slate-800">{order.table}</div>
-                      <div className="text-[10px] text-slate-500">{order.type} • {order.waiter}</div>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell max-w-[180px] truncate text-xs text-slate-600">
-                      {order.items}
-                    </TableCell>
-                    <TableCell className="text-xs font-bold text-slate-900">
-                      {order.total}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={order.status} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedOrder(order);
-                          setIsDetailOpen(true);
-                        }}
-                        className="h-7 px-2 text-xs font-semibold text-blue-600 hover:bg-blue-50"
-                      >
-                        <Eye className="w-3.5 h-3.5 mr-1" />
-                        View
-                      </Button>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                      <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
+                      Loading live orders...
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : recentOrdersList.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                      No active shift orders found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  recentOrdersList.map((order) => {
+                    const orderToken = `#ORD-${order.id.slice(-4).toUpperCase()}`;
+                    const tableLabel = order.table ? `Table ${order.table.tableNumber}` : order.orderType;
+                    const itemsSummary = formatItemsSummary(order.items);
+
+                    return (
+                      <TableRow key={order.id} className="hover:bg-slate-50/60 transition-colors">
+                        <TableCell className="font-mono text-xs font-bold text-slate-900">
+                          {orderToken}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs font-semibold text-slate-800">{tableLabel}</div>
+                          <div className="text-[10px] text-slate-500">{order.customerName || "Walk-in Guest"}</div>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell max-w-[200px] truncate text-xs text-slate-600">
+                          {itemsSummary}
+                        </TableCell>
+                        <TableCell className="text-xs font-bold text-slate-900">
+                          ₹{order.total?.toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={order.status} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setIsDetailOpen(true);
+                            }}
+                            className="h-7 px-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1" />
+                            View
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </div>
@@ -342,20 +403,24 @@ export default function StaffDashboardPage() {
             </h3>
 
             <div className="space-y-4">
-              {recentActivity.map((act) => {
-                const Icon = act.icon;
-                return (
-                  <div key={act.id} className="flex items-start gap-3 text-xs pb-3 border-b border-slate-100 last:border-0">
-                    <div className="p-2 rounded-lg bg-slate-100 text-slate-700 shrink-0 mt-0.5">
-                      <Icon className="w-3.5 h-3.5 text-blue-600" />
+              {activityFeed.length === 0 ? (
+                <p className="text-xs text-slate-400">No recent shift activity logged yet.</p>
+              ) : (
+                activityFeed.map((act) => {
+                  const Icon = act.icon;
+                  return (
+                    <div key={act.id} className="flex items-start gap-3 text-xs pb-3 border-b border-slate-100 last:border-0">
+                      <div className="p-2 rounded-lg bg-slate-100 text-slate-700 shrink-0 mt-0.5">
+                        <Icon className="w-3.5 h-3.5 text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-slate-800 font-medium leading-snug">{act.text}</p>
+                        <span className="text-[10px] text-slate-400 mt-0.5 block">{act.time}</span>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-slate-800 font-medium leading-snug">{act.text}</p>
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">{act.time}</span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -366,13 +431,16 @@ export default function StaffDashboardPage() {
         <Modal
           isOpen={isDetailOpen}
           onClose={() => setIsDetailOpen(false)}
-          title={`Order Details — ${selectedOrder.id}`}
+          title={`Order Details — #ORD-${selectedOrder.id.slice(-4).toUpperCase()}`}
         >
           <div className="space-y-4 py-2 text-xs">
             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
               <div>
-                <span className="text-slate-500 block">Table & Staff:</span>
-                <span className="font-semibold text-slate-900">{selectedOrder.table} ({selectedOrder.waiter})</span>
+                <span className="text-slate-500 block">Table & Customer:</span>
+                <span className="font-semibold text-slate-900">
+                  {selectedOrder.table ? `Table ${selectedOrder.table.tableNumber}` : selectedOrder.orderType} (
+                  {selectedOrder.customerName || "Walk-in Guest"})
+                </span>
               </div>
               <StatusBadge status={selectedOrder.status} />
             </div>
@@ -380,13 +448,13 @@ export default function StaffDashboardPage() {
             <div className="space-y-1">
               <span className="font-bold text-slate-700 uppercase block">Ordered Items</span>
               <div className="p-3 border border-slate-200 rounded-lg text-slate-700 leading-relaxed bg-white">
-                {selectedOrder.items}
+                {formatItemsSummary(selectedOrder.items)}
               </div>
             </div>
 
             <div className="flex justify-between items-center pt-2 font-bold text-slate-900 border-t border-slate-100">
               <span>Total Amount:</span>
-              <span className="text-base text-blue-600">{selectedOrder.total}</span>
+              <span className="text-base text-blue-600">₹{selectedOrder.total?.toFixed(2)}</span>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -394,7 +462,7 @@ export default function StaffDashboardPage() {
                 Close
               </Button>
               <Link href="/staff/menu">
-                <Button size="sm" className="bg-[#0052ff] text-white hover:bg-blue-700">
+                <Button size="sm" className="bg-[#0052ff] text-white hover:bg-blue-700 border-none cursor-pointer">
                   Open in POS
                 </Button>
               </Link>

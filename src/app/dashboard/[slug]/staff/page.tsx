@@ -40,6 +40,10 @@ import {
   XCircle,
   Clock,
   Copy,
+  Calendar,
+  History,
+  DollarSign,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -52,6 +56,9 @@ import {
   createStaffAccount,
   listStaffSalaries,
   updateStaffSalary,
+  recordSalaryPayment,
+  getSalaryHistory,
+  getAllSalaryTransactions,
 } from "@/actions/staff";
 
 export interface StaffMember {
@@ -64,14 +71,16 @@ export interface StaffMember {
 }
 
 export interface SalaryRecord {
-  id: string;
+  userId: string;
   name: string;
+  email: string;
   role: string;
   monthlySalary: number;
   advancePaid: number;
+  totalPaid: number;
   remainingSalary: number;
   lastPaidDate: string;
-  paymentStatus: "Paid" | "Pending";
+  paymentStatus: string;
 }
 
 export default function StaffPage() {
@@ -79,7 +88,7 @@ export default function StaffPage() {
   const params = useParams();
   const slug = (params?.slug as string) || "restaurant";
 
-  const [activeTab, setActiveTab] = useState<"attendance" | "salary">("attendance");
+  const [activeTab, setActiveTab] = useState<"attendance" | "salary" | "invitations">("attendance");
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
@@ -87,16 +96,26 @@ export default function StaffPage() {
   const [members, setMembers] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
   const [salaries, setSalaries] = useState<any[]>([]);
+  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [staffFilter, setStaffFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Edit Salary Modal State
+  // Manage Salary & Payment Transaction Modal State
   const [isEditSalaryOpen, setIsEditSalaryOpen] = useState(false);
   const [editingStaffUser, setEditingStaffUser] = useState<any | null>(null);
   const [monthlySalaryInput, setMonthlySalaryInput] = useState("0");
-  const [advancePaidInput, setAdvancePaidInput] = useState("0");
-  const [paymentStatusInput, setPaymentStatusInput] = useState("Pending");
   const [isSavingSalary, setIsSavingSalary] = useState(false);
+
+  // Pay Salary Form State
+  const [paymentAmountInput, setPaymentAmountInput] = useState("");
+  const [paymentDateInput, setPaymentDateInput] = useState(
+    () => new Date().toISOString().slice(0, 10)
+  );
+  const [paymentTypeInput, setPaymentTypeInput] = useState<"Salary" | "Advance">("Salary");
+  const [paymentNotesInput, setPaymentNotesInput] = useState("");
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
 
   // Add Staff Form State
   const [name, setName] = useState("");
@@ -106,24 +125,27 @@ export default function StaffPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<"admin" | "staff">("staff");
 
-  // Load members, invitations, and salaries from database
+  // Load members, invitations, salaries, and transaction history from database
   const loadStaffData = async (silent = false) => {
     try {
       if (!silent) setIsLoading(true);
-      const [staffRes, invRes, salaryRes] = await Promise.allSettled([
+      const [staffRes, invRes, salaryRes, txRes] = await Promise.allSettled([
         listStaff(),
         listPendingInvitations(),
         listStaffSalaries(),
+        getAllSalaryTransactions(),
       ]);
 
       const rawStaff: any = staffRes.status === "fulfilled" ? staffRes.value : null;
       const fetchedMembers = Array.isArray(rawStaff) ? rawStaff : (rawStaff?.members || []);
       const fetchedInvitations = invRes.status === "fulfilled" ? invRes.value : [];
       const fetchedSalaries = salaryRes.status === "fulfilled" ? salaryRes.value : [];
+      const fetchedTx = txRes.status === "fulfilled" ? txRes.value : [];
 
       setMembers(fetchedMembers || []);
       setInvitations(fetchedInvitations || []);
       setSalaries(fetchedSalaries || []);
+      setAllTransactions(fetchedTx || []);
     } catch (err: any) {
       console.error("Error loading staff roster:", err);
       if (!silent) toast.error(err.message || "Failed to load staff roster");
@@ -143,23 +165,33 @@ export default function StaffPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Computed filtered transactions for main section
+  const filteredTransactions = useMemo(() => {
+    return allTransactions.filter((tx) => {
+      const matchesStaff = staffFilter === "all" || tx.userId === staffFilter;
+      const matchesType = typeFilter === "all" || tx.type === typeFilter;
+      return matchesStaff && matchesType;
+    });
+  }, [allTransactions, staffFilter, typeFilter]);
+
   const handleOpenEditSalary = (record: any) => {
     setEditingStaffUser(record);
     setMonthlySalaryInput(record.monthlySalary.toString());
-    setAdvancePaidInput(record.advancePaid.toString());
-    setPaymentStatusInput(record.paymentStatus || "Pending");
+    setPaymentAmountInput(record.remainingSalary > 0 ? record.remainingSalary.toString() : "");
+    setPaymentDateInput(new Date().toISOString().slice(0, 10));
+    setPaymentTypeInput("Salary");
+    setPaymentNotesInput("");
     setIsEditSalaryOpen(true);
   };
 
-  const handleSaveSalarySubmit = async (e: React.FormEvent) => {
+  // Save Base Monthly Salary
+  const handleSaveBaseSalarySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStaffUser) return;
 
     const mSal = parseFloat(monthlySalaryInput) || 0;
-    const adv = parseFloat(advancePaidInput) || 0;
-
-    if (mSal < 0 || adv < 0) {
-      toast.error("Salary amounts cannot be negative");
+    if (mSal < 0) {
+      toast.error("Monthly salary cannot be negative");
       return;
     }
 
@@ -167,16 +199,48 @@ export default function StaffPage() {
     try {
       await updateStaffSalary(editingStaffUser.userId, {
         monthlySalary: mSal,
-        advancePaid: adv,
-        paymentStatus: paymentStatusInput,
       });
-      toast.success(`Salary record updated for ${editingStaffUser.name}!`);
-      setIsEditSalaryOpen(false);
+      toast.success(`Base salary set to ₹${mSal.toLocaleString("en-IN")} for ${editingStaffUser.name}!`);
       await loadStaffData(true);
     } catch (err: any) {
-      toast.error(err.message || "Failed to update salary");
+      toast.error(err.message || "Failed to update base salary");
     } finally {
       setIsSavingSalary(false);
+    }
+  };
+
+  // Record Salary / Advance Payment Transaction
+  const handleRecordPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStaffUser) return;
+
+    const amt = parseFloat(paymentAmountInput) || 0;
+    if (amt <= 0) {
+      toast.error("Please enter a valid payment amount greater than 0");
+      return;
+    }
+
+    setIsRecordingPayment(true);
+    try {
+      await recordSalaryPayment({
+        userId: editingStaffUser.userId,
+        amount: amt,
+        paymentDate: paymentDateInput,
+        type: paymentTypeInput,
+        notes: paymentNotesInput,
+      });
+
+      toast.success(`${paymentTypeInput} payment of ₹${amt.toLocaleString("en-IN")} recorded!`);
+      setPaymentAmountInput("");
+      setPaymentNotesInput("");
+      setIsEditSalaryOpen(false);
+
+      // Refresh overall salary roster & transaction history
+      await loadStaffData(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to record payment transaction");
+    } finally {
+      setIsRecordingPayment(false);
     }
   };
 
@@ -236,16 +300,31 @@ export default function StaffPage() {
     }
   };
 
-  // Remove Staff Member
-  const handleRemoveMember = async (memberId: string, name: string) => {
-    if (!confirm(`Are you sure you want to remove ${name} from the restaurant roster?`)) return;
+  // Custom Member Removal Modal State
+  const [memberToRemove, setMemberToRemove] = useState<{ id: string; name: string } | null>(null);
+  const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
 
+  // Trigger Remove Confirmation Modal
+  const handlePromptRemoveMember = (memberId: string, name: string) => {
+    setMemberToRemove({ id: memberId, name });
+    setIsRemoveConfirmOpen(true);
+  };
+
+  // Confirm Staff Member Removal
+  const handleConfirmRemoveMember = async () => {
+    if (!memberToRemove) return;
+    setIsRemovingMember(true);
     try {
-      await removeStaff(memberId);
-      toast.success(`${name} removed from restaurant`);
+      await removeStaff(memberToRemove.id);
+      toast.success(`${memberToRemove.name} removed from organization successfully.`);
+      setIsRemoveConfirmOpen(false);
+      setMemberToRemove(null);
       await loadStaffData(true);
     } catch (err: any) {
       toast.error(err.message || "Failed to remove staff member");
+    } finally {
+      setIsRemovingMember(false);
     }
   };
 
@@ -260,49 +339,7 @@ export default function StaffPage() {
     }
   };
 
-  // Read-only Salary Management data (INR ₹)
-  const salaryRecords: SalaryRecord[] = [
-    {
-      id: "SAL-1",
-      name: "Avery Lin",
-      role: "General Manager",
-      monthlySalary: 85000,
-      advancePaid: 10000,
-      remainingSalary: 75000,
-      lastPaidDate: "2026-07-01",
-      paymentStatus: "Paid",
-    },
-    {
-      id: "SAL-2",
-      name: "Maya Patel",
-      role: "Floor Lead",
-      monthlySalary: 55000,
-      advancePaid: 5000,
-      remainingSalary: 50000,
-      lastPaidDate: "2026-07-01",
-      paymentStatus: "Paid",
-    },
-    {
-      id: "SAL-3",
-      name: "Jon Bell",
-      role: "Sous Chef",
-      monthlySalary: 62000,
-      advancePaid: 0,
-      remainingSalary: 62000,
-      lastPaidDate: "2026-07-01",
-      paymentStatus: "Paid",
-    },
-    {
-      id: "SAL-4",
-      name: "Sophie Martin",
-      role: "Server",
-      monthlySalary: 35000,
-      advancePaid: 4000,
-      remainingSalary: 31000,
-      lastPaidDate: "2026-06-30",
-      paymentStatus: "Pending",
-    },
-  ];
+
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -500,7 +537,7 @@ export default function StaffPage() {
 
                             {member.role !== "owner" && (
                               <DropdownMenuItem
-                                onClick={() => handleRemoveMember(member.id, userName)}
+                                onClick={() => handlePromptRemoveMember(member.id, userName)}
                                 className="text-xs gap-2 text-rose-600 cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" /> Remove Member
@@ -604,139 +641,303 @@ export default function StaffPage() {
         </div>
       )}
 
-      {/* Tab 2: Live Salary Management */}
+      {/* Tab 3: Live Salary Management */}
       {!isLoading && activeTab === "salary" && (
-        <div className="design-surface p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <div className="text-[10px] font-mono font-semibold tracking-wider text-blue-600 uppercase">
-                SALARY & DISBURSEMENTS
+        <div className="space-y-6">
+          {/* Main Salary Overview Table */}
+          <div className="design-surface p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <div className="text-[10px] font-mono font-semibold tracking-wider text-blue-600 uppercase">
+                  SALARY & DISBURSEMENTS
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mt-0.5">
+                  Salary Management
+                </h3>
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mt-0.5">
-                Salary Management
-              </h3>
+              <span className="text-xs text-slate-500 font-mono bg-slate-100 px-3 py-1.5 rounded-lg self-start sm:self-auto">
+                Amounts in ₹ (INR) — PostgreSQL Live Database
+              </span>
             </div>
-            <span className="text-xs text-slate-500 font-mono bg-slate-100 px-3 py-1.5 rounded-lg self-start sm:self-auto">
-              Amounts in ₹ (INR) — PostgreSQL Live Database
-            </span>
-          </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STAFF NAME</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ROLE</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">MONTHLY SALARY (₹)</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ADVANCE PAID (₹)</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">REMAINING SALARY (₹)</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">LAST PAID DATE</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STATUS</TableHead>
-                <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-slate-100 text-xs">
-              {salaries.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
-                    No staff salary records configured yet.
-                  </TableCell>
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STAFF NAME</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">ROLE</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">MONTHLY SALARY (₹)</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">PAID AMOUNT (₹)</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">REMAINING SALARY (₹)</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">LAST PAID DATE</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STATUS</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">ACTIONS</TableHead>
                 </TableRow>
-              ) : (
-                salaries.map((record) => (
-                  <TableRow key={record.userId} className="hover:bg-slate-50/80 transition-colors border-slate-100">
-                    <TableCell className="py-4 px-4 font-semibold text-slate-900">{record.name}</TableCell>
-                    <TableCell className="py-4 px-4 text-blue-600 font-medium uppercase text-[11px]">{record.role}</TableCell>
-                    <TableCell className="py-4 px-4 text-right font-mono font-semibold text-slate-900">₹{record.monthlySalary.toLocaleString("en-IN")}</TableCell>
-                    <TableCell className="py-4 px-4 text-right font-mono text-amber-600">₹{record.advancePaid.toLocaleString("en-IN")}</TableCell>
-                    <TableCell className="py-4 px-4 text-right font-mono font-bold text-blue-600">₹{record.remainingSalary.toLocaleString("en-IN")}</TableCell>
-                    <TableCell className="py-4 px-4 font-mono text-slate-500">{record.lastPaidDate}</TableCell>
-                    <TableCell className="py-4 px-4"><StatusBadge status={record.paymentStatus} /></TableCell>
-                    <TableCell className="py-4 px-4 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenEditSalary(record)}
-                        className="h-8 text-xs text-blue-600 border-blue-200 hover:bg-blue-50 rounded-lg cursor-pointer"
-                      >
-                        Edit / Pay
-                      </Button>
+              </TableHeader>
+              <TableBody className="divide-y divide-slate-100 text-xs">
+                {salaries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
+                      No staff salary records configured yet.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  salaries.map((record) => (
+                    <TableRow key={record.userId} className="hover:bg-slate-50/80 transition-colors border-slate-100">
+                      <TableCell className="py-4 px-4 font-semibold text-slate-900">{record.name}</TableCell>
+                      <TableCell className="py-4 px-4 text-blue-600 font-medium uppercase text-[11px]">{record.role}</TableCell>
+                      <TableCell className="py-4 px-4 text-right font-mono font-semibold text-slate-900">₹{record.monthlySalary.toLocaleString("en-IN")}</TableCell>
+                      <TableCell className="py-4 px-4 text-right font-mono text-amber-600">₹{(record.totalPaid || 0).toLocaleString("en-IN")}</TableCell>
+                      <TableCell className="py-4 px-4 text-right font-mono font-bold text-blue-600">₹{record.remainingSalary.toLocaleString("en-IN")}</TableCell>
+                      <TableCell className="py-4 px-4 font-mono text-slate-500">{record.lastPaidDate}</TableCell>
+                      <TableCell className="py-4 px-4"><StatusBadge status={record.paymentStatus} /></TableCell>
+                      <TableCell className="py-4 px-4 text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenEditSalary(record)}
+                          className="h-8 text-xs text-blue-600 border-blue-200 hover:bg-blue-50 rounded-lg cursor-pointer"
+                        >
+                          Pay Salary
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Salary Transaction History Section */}
+          <div className="design-surface p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-mono font-semibold tracking-wider text-blue-600 uppercase">
+                  AUDIT LOG & RECORDS
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mt-0.5">
+                  Salary Transaction History
+                </h3>
+              </div>
+
+              {/* Transaction Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={staffFilter}
+                  onChange={(e) => setStaffFilter(e.target.value)}
+                  className="h-9 px-3 rounded-xl border border-slate-200 text-xs bg-white font-medium text-slate-700 focus:outline-none"
+                >
+                  <option value="all">All Staff Members</option>
+                  {salaries.map((s) => (
+                    <option key={s.userId} value={s.userId}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="h-9 px-3 rounded-xl border border-slate-200 text-xs bg-white font-medium text-slate-700 focus:outline-none"
+                >
+                  <option value="all">All Transaction Types</option>
+                  <option value="Salary">Salary</option>
+                  <option value="Advance">Advance</option>
+                </select>
+              </div>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-slate-100 text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase hover:bg-transparent">
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">DATE</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">STAFF MEMBER</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">TRANSACTION TYPE</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold text-right">AMOUNT</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">PAYMENT STATUS</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">NOTES</TableHead>
+                  <TableHead className="py-3 px-4 h-auto text-slate-400 font-mono font-semibold">RECORDED BY</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-slate-100 text-xs">
+                {filteredTransactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-slate-400 text-xs">
+                      No salary or advance payment transactions recorded yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredTransactions.map((tx) => (
+                    <TableRow key={tx.id} className="hover:bg-slate-50/80 transition-colors border-slate-100">
+                      <TableCell className="py-3.5 px-4 font-mono text-slate-700">{tx.date}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-semibold text-slate-900">{tx.staffName}</TableCell>
+                      <TableCell className="py-3.5 px-4">
+                        <span
+                          className={cn(
+                            "px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase font-mono border",
+                            tx.type === "Advance"
+                              ? "bg-amber-50 text-amber-700 border-amber-200/80"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                          )}
+                        >
+                          {tx.type}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                        ₹{tx.amount.toLocaleString("en-IN")}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4">
+                        <StatusBadge status={tx.paymentStatus || "Paid"} />
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-slate-500 max-w-[200px] truncate">{tx.notes}</TableCell>
+                      <TableCell className="py-3.5 px-4 font-mono text-slate-600">{tx.recordedBy}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
 
-      {/* Modal: Edit Staff Salary / Record Disbursement */}
+      {/* Modal: Compact Pay Salary */}
       <Modal
         isOpen={isEditSalaryOpen}
         onClose={() => setIsEditSalaryOpen(false)}
-        title={`Manage Salary — ${editingStaffUser?.name || "Staff Member"}`}
-        subtitle="Set base monthly salary, record advance payments, and update disbursement status."
+        title="Pay Salary"
+        subtitle={`Staff: ${editingStaffUser?.name || "Staff Member"}`}
+        className="max-w-lg"
       >
-        <form onSubmit={handleSaveSalarySubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Monthly Base Salary (₹) *
-            </label>
-            <Input
-              type="number"
-              min="0"
-              required
-              value={monthlySalaryInput}
-              onChange={(e) => setMonthlySalaryInput(e.target.value)}
-              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono font-bold"
-            />
+        <div className="space-y-4">
+          {/* Salary Summary Block */}
+          <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-center">
+            <div>
+              <span className="text-[10px] font-mono font-semibold text-slate-400 uppercase block">MONTHLY SALARY</span>
+              <span className="text-sm font-bold text-slate-900 font-mono">
+                ₹{(editingStaffUser?.monthlySalary || 0).toLocaleString("en-IN")}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-mono font-semibold text-amber-600 uppercase block">ALREADY PAID</span>
+              <span className="text-sm font-bold text-amber-700 font-mono">
+                ₹{(editingStaffUser?.totalPaid || 0).toLocaleString("en-IN")}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-mono font-semibold text-blue-600 uppercase block">REMAINING</span>
+              <span className="text-sm font-bold text-blue-700 font-mono">
+                ₹{(editingStaffUser?.remainingSalary || 0).toLocaleString("en-IN")}
+              </span>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Advance Paid (₹)
-            </label>
-            <Input
-              type="number"
-              min="0"
-              value={advancePaidInput}
-              onChange={(e) => setAdvancePaidInput(e.target.value)}
-              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono font-bold text-amber-600"
-            />
-          </div>
+          {/* Payment Form */}
+          <form onSubmit={handleRecordPaymentSubmit} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Payment Amount (₹) *
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="₹ Amount"
+                  required
+                  value={paymentAmountInput}
+                  onChange={(e) => setPaymentAmountInput(e.target.value)}
+                  className="w-full h-9 px-3 bg-white text-xs font-mono border-slate-200"
+                />
+              </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Disbursement Status *
-            </label>
-            <select
-              value={paymentStatusInput}
-              onChange={(e) => setPaymentStatusInput(e.target.value)}
-              className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white font-medium"
-            >
-              <option value="Pending">Pending</option>
-              <option value="Paid">Disbursed (Paid)</option>
-              <option value="Partial">Partial Payment</option>
-            </select>
-          </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Payment Type *
+                </label>
+                <select
+                  value={paymentTypeInput}
+                  onChange={(e) => setPaymentTypeInput(e.target.value as "Salary" | "Advance")}
+                  className="w-full h-9 px-3 rounded-xl border border-slate-200 text-xs bg-white font-medium text-slate-800"
+                >
+                  <option value="Salary">Salary</option>
+                  <option value="Advance">Advance</option>
+                </select>
+              </div>
+            </div>
 
-          <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setIsEditSalaryOpen(false)}
-              className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSavingSalary}
-              className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold border-none cursor-pointer"
-            >
-              {isSavingSalary ? "Saving..." : "Save Salary Record"}
-            </Button>
-          </div>
-        </form>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Payment Date *
+                </label>
+                <Input
+                  type="date"
+                  required
+                  value={paymentDateInput}
+                  onChange={(e) => setPaymentDateInput(e.target.value)}
+                  className="w-full h-9 px-3 bg-white text-xs font-mono border-slate-200"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Notes (Optional)
+                </label>
+                <Input
+                  type="text"
+                  placeholder="e.g. July Salary"
+                  value={paymentNotesInput}
+                  onChange={(e) => setPaymentNotesInput(e.target.value)}
+                  className="w-full h-9 px-3 bg-white text-xs border-slate-200"
+                />
+              </div>
+            </div>
+
+            {/* Base Monthly Salary Configuration */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>Base Monthly Contract:</span>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min="0"
+                  value={monthlySalaryInput}
+                  onChange={(e) => setMonthlySalaryInput(e.target.value)}
+                  className="w-24 h-8 text-xs font-mono px-2"
+                />
+                <Button
+                  type="button"
+                  onClick={handleSaveBaseSalarySubmit}
+                  disabled={isSavingSalary}
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs px-2.5 cursor-pointer"
+                >
+                  {isSavingSalary ? "Saving..." : "Set Base"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsEditSalaryOpen(false)}
+                className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isRecordingPayment}
+                className="px-5 py-2 h-9 bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold rounded-xl border-none cursor-pointer"
+              >
+                {isRecordingPayment ? "Saving..." : "Record Payment"}
+              </Button>
+            </div>
+          </form>
+        </div>
       </Modal>
 
       {/* Modal: Add Staff Member */}
@@ -892,6 +1093,49 @@ export default function StaffPage() {
               className="px-4 py-2 h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl border-none cursor-pointer"
             >
               Close Schedule
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Remove Member Confirmation */}
+      <Modal
+        isOpen={isRemoveConfirmOpen}
+        onClose={() => {
+          setIsRemoveConfirmOpen(false);
+          setMemberToRemove(null);
+        }}
+        title="Remove Staff Member"
+        subtitle="Confirm member removal from organization."
+        className="max-w-md"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Are you sure you want to remove{" "}
+            <strong className="text-slate-900 font-bold">{memberToRemove?.name}</strong>{" "}
+            from this organization? This action will revoke their access to the dashboard.
+          </p>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isRemovingMember}
+              onClick={() => {
+                setIsRemoveConfirmOpen(false);
+                setMemberToRemove(null);
+              }}
+              className="px-4 py-2 h-9 text-xs rounded-xl cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={isRemovingMember}
+              onClick={handleConfirmRemoveMember}
+              className="px-4 py-2 h-9 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl border-none cursor-pointer"
+            >
+              {isRemovingMember ? "Removing..." : "Remove"}
             </Button>
           </div>
         </div>

@@ -146,15 +146,6 @@ export function OrganizationMembers({
         <h3 className="truncate text-sm font-semibold">
           {organizationLocalization.members}
         </h3>
-
-        <Button
-          className="shrink-0"
-          size="sm"
-          disabled={isPending}
-          onClick={() => setInviteOpen(true)}
-        >
-          {organizationLocalization.inviteMember}
-        </Button>
       </div>
 
       <div className="flex flex-col gap-4">
@@ -272,8 +263,6 @@ export function OrganizationMembers({
           </Table>
         </Card>
       </div>
-
-      <InviteMemberDialog open={inviteOpen} onOpenChange={setInviteOpen} />
     </div>
   )
 }

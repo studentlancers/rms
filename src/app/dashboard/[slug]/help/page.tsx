@@ -2,27 +2,39 @@
 
 import React from "react";
 import Link from "next/link";
-import { Shield, ShoppingBag, DollarSign, ChevronRight, Mail, MessageSquare } from "lucide-react";
+import { Shield, ShoppingBag, DollarSign, Mail, MessageSquare } from "lucide-react";
 
 export default function HelpPage() {
   const guides = [
     {
       icon: Shield,
       title: "Getting started",
-      description: "Set up your restaurant, menu, tables, and staff team.",
-      linkText: "Read guide",
+      whatItDoes: "Set up your restaurant profile, menu categories, dining tables, and staff team roles.",
+      howToUse: [
+        "Go to Menu to configure food categories and items.",
+        "Go to Staff to create staff member accounts directly.",
+        "Monitor live operations on the Overview dashboard.",
+      ],
     },
     {
       icon: ShoppingBag,
       title: "Reservations & Operations",
-      description: "Learn how to manage table bookings, floor status, and active orders.",
-      linkText: "Read guide",
+      whatItDoes: "Track dining floor occupancy, walk-in bookings, and live order preparation statuses.",
+      howToUse: [
+        "Click 'New booking' on Overview or manage in Reservations.",
+        "Use 'View floor plan' in Header to check live table status.",
+        "Track active dine-in and delivery orders in Operations.",
+      ],
     },
     {
       icon: DollarSign,
       title: "Billing & Margin Control",
-      description: "Understand tax rates, charges, splitting fees, and daily checks.",
-      linkText: "Read guide",
+      whatItDoes: "Manage customer billing, tax rates, packaging fees, and staff salary disbursements.",
+      howToUse: [
+        "Configure default packaging and service charges in Settings.",
+        "Generate and process customer POS invoices in Billing.",
+        "Record staff salaries and advances under Staff Management.",
+      ],
     },
   ];
 
@@ -41,35 +53,42 @@ export default function HelpPage() {
         </p>
       </div>
 
-      {/* 3 Resource Cards */}
+      {/* 3 Read-Only Informational Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {guides.map((guide, idx) => {
           const Icon = guide.icon;
           return (
             <div
               key={idx}
-              className="design-surface p-6 flex flex-col justify-between hover:shadow-md transition-all group"
+              className="design-surface p-6 flex flex-col justify-between"
             >
               <div>
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200/60 mb-5 group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200/60 mb-4">
                   <Icon className="w-5 h-5" />
                 </div>
 
-                <h3 className="font-bold text-base text-slate-900 mb-1">
+                <h3 className="font-bold text-lg text-slate-900 mb-3">
                   {guide.title}
                 </h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-6">
-                  {guide.description}
-                </p>
-              </div>
 
-              <button
-                onClick={() => alert(`Opening ${guide.title}...`)}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors self-start cursor-pointer border-none bg-transparent p-0"
-              >
-                <span>{guide.linkText}</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <span className="font-bold text-slate-900 block mb-0.5">What it does:</span>
+                    <p className="text-slate-500 leading-relaxed">
+                      {guide.whatItDoes}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="font-bold text-slate-900 block mb-1">How to use:</span>
+                    <ol className="list-decimal list-inside text-slate-600 space-y-1 pl-0.5 font-medium leading-relaxed">
+                      {guide.howToUse.map((step, sIdx) => (
+                        <li key={sIdx}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
+              </div>
             </div>
           );
         })}
@@ -91,7 +110,7 @@ export default function HelpPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <a
-            href="mailto:support@studentlancer.com"
+            href="mailto:studentlancer@gmail.com"
             className="p-5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition-all flex items-center gap-4 group no-underline text-slate-900"
           >
             <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-200/60 group-hover:scale-105 transition-transform">
@@ -99,13 +118,13 @@ export default function HelpPage() {
             </div>
             <div>
               <div className="text-xs font-mono font-semibold text-slate-400 uppercase">EMAIL SUPPORT</div>
-              <div className="text-sm font-bold text-slate-900 mt-0.5">support@studentlancer.com</div>
-              <div className="text-[11px] text-blue-600 font-medium mt-1">Send Email &rarr;</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">studentlancer@gmail.com</div>
+              <div className="text-[11px] text-blue-600 font-medium mt-1">Contact via Email &rarr;</div>
             </div>
           </a>
 
           <a
-            href="https://wa.me/919876543210"
+            href="https://wa.me/918249735998"
             target="_blank"
             rel="noopener noreferrer"
             className="p-5 rounded-2xl border border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50/70 transition-all flex items-center gap-4 group no-underline text-slate-900"
@@ -115,7 +134,7 @@ export default function HelpPage() {
             </div>
             <div>
               <div className="text-xs font-mono font-semibold text-emerald-600 uppercase">WHATSAPP SUPPORT</div>
-              <div className="text-sm font-bold text-slate-900 mt-0.5">+91 98765 43210</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">8249735998</div>
               <div className="text-[11px] text-emerald-700 font-medium mt-1">Chat on WhatsApp &rarr;</div>
             </div>
           </a>

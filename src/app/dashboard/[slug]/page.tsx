@@ -7,26 +7,14 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, ChevronDown, Sparkles, ChevronRight, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { Sparkles } from "lucide-react";
 import { getDailySales } from "@/actions/analytics";
-import { createReservation } from "@/actions/reservations";
-import { FloorPlanModal } from "@/components/modals/floor-plan-modal";
 
 export default function OverviewPage() {
   const params = useParams();
   const slug = (params?.slug as string) || "restaurant";
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  // Modal state
   const [isInsightsModalOpen, setIsInsightsModalOpen] = useState(false);
-  const [isFloorPlanOpen, setIsFloorPlanOpen] = useState(false);
-
-  // Form state for New Booking
-  const [guestName, setGuestName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [partySize, setPartySize] = useState("2");
-  const [time, setTime] = useState("");
-  const [notes, setNotes] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Analytics Data State
   const [weeklySales, setWeeklySales] = useState<any[]>([]);
@@ -76,36 +64,6 @@ export default function OverviewPage() {
     return weeklySales.reduce((acc, curr) => acc + (curr.total || 0), 0);
   }, [weeklySales]);
 
-  // Handle Booking Creation
-  const handleBookingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!guestName || !phone || !time) {
-      toast.error("Please fill in required booking fields");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append("customerName", guestName);
-      formData.append("customerPhone", phone);
-      formData.append("partySize", partySize);
-      formData.append("reservationTime", new Date(time).toISOString());
-      if (notes) formData.append("notes", notes);
-
-      await createReservation(formData);
-      toast.success(`Booking created for ${guestName}!`);
-      setIsBookingModalOpen(false);
-      setGuestName("");
-      setPhone("");
-      setNotes("");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create booking");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   // Dynamic Chart Points Generator
   const chartPoints = useMemo(() => {
     const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
@@ -134,23 +92,6 @@ export default function OverviewPage() {
           <p className="text-sm text-slate-500 mt-1">
             Here&apos;s how your restaurant is performing today.
           </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsFloorPlanOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-slate-900 hover:bg-black text-white text-xs font-semibold shadow-xs transition-all cursor-pointer border-none"
-          >
-            <span>View floor plan</span>
-          </button>
-
-          <button
-            onClick={() => setIsBookingModalOpen(true)}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer border-none"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New booking</span>
-          </button>
         </div>
       </div>
 
@@ -279,91 +220,6 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {/* Modal: New Booking */}
-      <Modal
-        isOpen={isBookingModalOpen}
-        onClose={() => setIsBookingModalOpen(false)}
-        title="Create New Table Booking"
-        subtitle="Reserve a table for walk-in or phone guest."
-      >
-        <form onSubmit={handleBookingSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Guest Full Name *
-            </label>
-            <Input
-              type="text"
-              required
-              placeholder="e.g. Liam Carter"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Phone Number *
-              </label>
-              <Input
-                type="text"
-                required
-                placeholder="+91 98765 43210"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Party Size *
-              </label>
-              <Input
-                type="number"
-                min="1"
-                required
-                value={partySize}
-                onChange={(e) => setPartySize(e.target.value)}
-                className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Reservation Time *
-            </label>
-            <Input
-              type="datetime-local"
-              required
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="w-full px-3.5 py-2 h-10 rounded-xl border border-slate-200 text-xs font-mono"
-            />
-          </div>
-
-          <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setIsBookingModalOpen(false)}
-              className="px-4 py-2 h-9 rounded-xl text-xs font-semibold text-slate-600"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-5 py-2 h-9 rounded-xl bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold border-none cursor-pointer"
-            >
-              {isSubmitting ? "Saving..." : "Save Reservation"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
       {/* Modal: Intelligence Insights */}
       <Modal
         isOpen={isInsightsModalOpen}
@@ -392,11 +248,6 @@ export default function OverviewPage() {
           </div>
         </div>
       </Modal>
-
-      <FloorPlanModal
-        isOpen={isFloorPlanOpen}
-        onClose={() => setIsFloorPlanOpen(false)}
-      />
     </div>
   );
 }

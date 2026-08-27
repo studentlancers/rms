@@ -339,27 +339,72 @@ export async function cancelInvitation(invitationId: string) {
 }
 
 /**
- * Lists salary records for all staff members of active restaurant from database.
+ * Lists salary records for all staff members of active restaurant from database,
+ * incorporating real PostgreSQL payment transactions.
  */
 export async function listStaffSalaries() {
   await requireRole(["owner", "admin"]);
   const restaurantId = await getActiveRestaurantId();
 
-  const membersRes = await listStaff();
+  const [membersRes, salaries, transactions] = await Promise.all([
+    listStaff(),
+    db.staffSalary.findMany({ where: { restaurantId } }),
+    db.salaryTransaction.findMany({
+      where: { restaurantId },
+      orderBy: { paymentDate: "desc" },
+    }),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const members = Array.isArray(membersRes) ? membersRes : (membersRes as any)?.members || [];
-
-  const salaries = await db.staffSalary.findMany({
-    where: { restaurantId },
-  });
-
   const salaryMap = new Map(salaries.map((s) => [s.userId, s]));
 
+  // Group transactions by userId
+  const txByUser = new Map<string, typeof transactions>();
+  for (const tx of transactions) {
+    const list = txByUser.get(tx.userId) || [];
+    list.push(tx);
+    txByUser.set(tx.userId, list);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return members.map((m: any) => {
     const userId = m.user?.id || m.userId || m.id;
     const s = salaryMap.get(userId);
+    const userTx = txByUser.get(userId) || [];
+
     const monthlySalary = s?.monthlySalary || 0;
-    const advancePaid = s?.advancePaid || 0;
-    const remainingSalary = Math.max(0, monthlySalary - advancePaid);
+
+    // Calculate total payments made from PostgreSQL transaction history
+    let totalPaid = 0;
+    let advancePaid = 0;
+    for (const tx of userTx) {
+      totalPaid += tx.amount;
+      if (tx.type === "Advance") {
+        advancePaid += tx.amount;
+      }
+    }
+
+    const remainingSalary = Math.max(0, monthlySalary - totalPaid);
+
+    // Latest transaction date
+    const latestTxDate = userTx.length > 0 ? userTx[0].paymentDate : s?.lastPaidDate;
+    const formattedLastPaidDate = latestTxDate
+      ? new Date(latestTxDate).toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })
+      : "Not Disbursed";
+
+    let paymentStatus = "Pending";
+    if (monthlySalary > 0 && remainingSalary === 0 && totalPaid > 0) {
+      paymentStatus = "Paid";
+    } else if (totalPaid > 0) {
+      paymentStatus = "Partial";
+    } else if (monthlySalary === 0) {
+      paymentStatus = "Not Set";
+    }
 
     return {
       userId,
@@ -368,22 +413,21 @@ export async function listStaffSalaries() {
       role: m.role || "staff",
       monthlySalary,
       advancePaid,
+      totalPaid,
       remainingSalary,
-      lastPaidDate: s?.lastPaidDate ? s.lastPaidDate.toISOString().slice(0, 10) : "Not Disbursed",
-      paymentStatus: s?.paymentStatus || (monthlySalary > 0 ? "Pending" : "Not Set"),
+      lastPaidDate: formattedLastPaidDate,
+      paymentStatus,
     };
   });
 }
 
 /**
- * Updates or creates a staff member's salary & disbursement details in PostgreSQL.
+ * Updates a staff member's base monthly salary setting in PostgreSQL.
  */
 export async function updateStaffSalary(
   userId: string,
   data: {
     monthlySalary: number;
-    advancePaid?: number;
-    paymentStatus?: string;
   }
 ) {
   await requireRole(["owner", "admin"]);
@@ -398,20 +442,160 @@ export async function updateStaffSalary(
     },
     update: {
       monthlySalary: data.monthlySalary,
-      advancePaid: data.advancePaid ?? 0,
-      paymentStatus: data.paymentStatus ?? "Pending",
-      ...(data.paymentStatus === "Paid" ? { lastPaidDate: new Date() } : {}),
     },
     create: {
       restaurantId,
       userId,
       monthlySalary: data.monthlySalary,
-      advancePaid: data.advancePaid ?? 0,
-      paymentStatus: data.paymentStatus ?? "Pending",
-      ...(data.paymentStatus === "Paid" ? { lastPaidDate: new Date() } : {}),
     },
   });
 
   revalidatePath("/dashboard", "layout");
   return record;
 }
+
+/**
+ * Records a real salary or advance payment transaction in PostgreSQL.
+ * Recalculates remaining balance and updates last paid date.
+ */
+export async function recordSalaryPayment(data: {
+  userId: string;
+  amount: number;
+  paymentDate: string;
+  type: "Salary" | "Advance";
+  notes?: string;
+}) {
+  const ctx = await requireRole(["owner", "admin"]);
+  const restaurantId = await getActiveRestaurantId();
+
+  if (!data.amount || data.amount <= 0) {
+    throw new Error("Payment amount must be greater than zero.");
+  }
+
+  const pDate = data.paymentDate ? new Date(data.paymentDate) : new Date();
+
+  // 1. Create transaction record in PostgreSQL
+  const transaction = await db.salaryTransaction.create({
+    data: {
+      restaurantId,
+      userId: data.userId,
+      amount: data.amount,
+      type: data.type,
+      paymentDate: pDate,
+      notes: data.notes?.trim() || null,
+      createdById: ctx.userId,
+    },
+  });
+
+  // 2. Update staff salary lastPaidDate & updatedAt
+  await db.staffSalary.upsert({
+    where: {
+      restaurantId_userId: {
+        restaurantId,
+        userId: data.userId,
+      },
+    },
+    update: {
+      lastPaidDate: pDate,
+      updatedAt: new Date(),
+    },
+    create: {
+      restaurantId,
+      userId: data.userId,
+      monthlySalary: 0,
+      lastPaidDate: pDate,
+    },
+  });
+
+  revalidatePath("/dashboard", "layout");
+  return { success: true, transaction };
+}
+
+/**
+ * Returns full salary payment transaction history for a staff member from PostgreSQL.
+ * Enforces tenant isolation (`restaurantId`).
+ */
+export async function getSalaryHistory(userId: string) {
+  await requireRole(["owner", "admin"]);
+  const restaurantId = await getActiveRestaurantId();
+
+  const transactions = await db.salaryTransaction.findMany({
+    where: {
+      restaurantId,
+      userId,
+    },
+    orderBy: {
+      paymentDate: "desc",
+    },
+  });
+
+  // Fetch creator/recorder details
+  const creatorIds = Array.from(new Set(transactions.map((t) => t.createdById)));
+  const creators = await db.user.findMany({
+    where: { id: { in: creatorIds } },
+    select: { id: true, name: true, role: true },
+  });
+  const creatorMap = new Map(creators.map((c) => [c.id, c.name || "Owner"]));
+
+  return transactions.map((t) => ({
+    id: t.id,
+    date: new Date(t.paymentDate).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }),
+    rawDate: t.paymentDate.toISOString(),
+    type: t.type,
+    amount: t.amount,
+    notes: t.notes || "-",
+    recordedBy: creatorMap.get(t.createdById) || "Owner",
+    createdAt: t.createdAt.toISOString(),
+  }));
+}
+
+/**
+ * Returns full salary payment transaction history for ALL staff members of the active restaurant.
+ * Enforces tenant isolation (`restaurantId`).
+ */
+export async function getAllSalaryTransactions() {
+  await requireRole(["owner", "admin"]);
+  const restaurantId = await getActiveRestaurantId();
+
+  const transactions = await db.salaryTransaction.findMany({
+    where: {
+      restaurantId,
+    },
+    orderBy: {
+      paymentDate: "desc",
+    },
+  });
+
+  const staffUserIds = Array.from(new Set(transactions.map((t) => t.userId)));
+  const creatorIds = Array.from(new Set(transactions.map((t) => t.createdById)));
+  const allUserIds = Array.from(new Set([...staffUserIds, ...creatorIds]));
+
+  const users = await db.user.findMany({
+    where: { id: { in: allUserIds } },
+    select: { id: true, name: true, email: true, role: true },
+  });
+  const userMap = new Map(users.map((u) => [u.id, u.name || u.email || "Staff Member"]));
+
+  return transactions.map((t) => ({
+    id: t.id,
+    userId: t.userId,
+    staffName: userMap.get(t.userId) || "Staff Member",
+    date: new Date(t.paymentDate).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }),
+    rawDate: t.paymentDate.toISOString(),
+    type: t.type,
+    amount: t.amount,
+    paymentStatus: "Paid",
+    notes: t.notes || "-",
+    recordedBy: userMap.get(t.createdById) || "Owner",
+    createdAt: t.createdAt.toISOString(),
+  }));
+}
+

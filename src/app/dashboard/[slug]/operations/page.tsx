@@ -23,7 +23,6 @@ import {
   updateReservationStatus,
 } from "@/actions/reservations";
 import { listTables } from "@/actions/tables";
-import { getBillingSettings, updateBillingSettings } from "@/actions/billing-settings";
 import { FloorPlanModal } from "@/components/modals/floor-plan-modal";
 
 export default function OperationsPage() {
@@ -38,12 +37,6 @@ export default function OperationsPage() {
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isFloorPlanOpen, setIsFloorPlanOpen] = useState(false);
 
-  // Default Billing Charge Prices State (Admin/Owner Management)
-  const [defaultPackagingCharge, setDefaultPackagingCharge] = useState("0");
-  const [defaultServiceCharge, setDefaultServiceCharge] = useState("0");
-  const [defaultSplittingCharge, setDefaultSplittingCharge] = useState("0");
-  const [isSavingCharges, setIsSavingCharges] = useState(false);
-
   // New Reservation Form State
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
@@ -52,28 +45,20 @@ export default function OperationsPage() {
   const [selectedTableId, setSelectedTableId] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Load operations data & billing charge defaults from database
+  // Load operations data from database
   const loadOperationsData = async (silent = false) => {
     try {
       if (!silent) setIsLoading(true);
-      const [fetchedReservations, fetchedTables, settings] = await Promise.allSettled([
+      const [fetchedReservations, fetchedTables] = await Promise.allSettled([
         listReservations(),
         listTables(),
-        getBillingSettings(),
       ]);
 
       const resData = fetchedReservations.status === "fulfilled" ? fetchedReservations.value : [];
       const tblData = fetchedTables.status === "fulfilled" ? fetchedTables.value : [];
-      const settingsData = settings.status === "fulfilled" ? settings.value : null;
 
       setReservations(resData || []);
       setTables(tblData || []);
-
-      if (settingsData) {
-        setDefaultPackagingCharge((settingsData.defaultPackagingCharge || 0).toString());
-        setDefaultServiceCharge((settingsData.defaultServiceCharge || 0).toString());
-        setDefaultSplittingCharge((settingsData.defaultSplittingCharge || 0).toString());
-      }
     } catch (err: any) {
       console.error("Error loading operations data:", err);
       if (!silent) toast.error(err.message || "Failed to load operations data");
@@ -98,33 +83,6 @@ export default function OperationsPage() {
     if (filterStatus === "All") return reservations;
     return reservations.filter((r) => r.status === filterStatus);
   }, [reservations, filterStatus]);
-
-  // Handle Save Default Charge Prices (Owner/Admin only)
-  const handleSaveDefaultCharges = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const pkg = parseFloat(defaultPackagingCharge) || 0;
-    const svc = parseFloat(defaultServiceCharge) || 0;
-    const splt = parseFloat(defaultSplittingCharge) || 0;
-
-    if (pkg < 0 || svc < 0 || splt < 0) {
-      toast.error("Default charge prices cannot be negative");
-      return;
-    }
-
-    setIsSavingCharges(true);
-    try {
-      await updateBillingSettings({
-        defaultPackagingCharge: pkg,
-        defaultServiceCharge: svc,
-        defaultSplittingCharge: splt,
-      });
-      toast.success("Default billing charge prices saved successfully!");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save default billing charges");
-    } finally {
-      setIsSavingCharges(false);
-    }
-  };
 
   // Handle New Booking Submit
   const handleCreateBookingSubmit = async (e: React.FormEvent) => {
@@ -231,85 +189,7 @@ export default function OperationsPage() {
         />
       </div>
 
-      {/* Additional Charges — Default Prices Management Card */}
-      <div className="design-surface p-6 space-y-4">
-        <div>
-          <div className="text-[10px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
-            ADMIN SETTINGS
-          </div>
-          <h3 className="text-xl font-bold text-slate-900 mt-0.5">
-            Default Billing Charges
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Configure standard default prices for Packaging, Service, and Splitting charges. These default values will automatically populate when generating bills.
-          </p>
-        </div>
 
-        <form onSubmit={handleSaveDefaultCharges} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700">
-                Packaging Charges
-              </label>
-              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
-                <span className="text-xs text-slate-400 font-mono">₹</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={defaultPackagingCharge}
-                  onChange={(e) => setDefaultPackagingCharge(e.target.value)}
-                  className="w-full h-7 text-xs font-mono border-none p-0 focus-visible:ring-0 text-slate-900 font-bold shadow-none"
-                />
-              </div>
-            </div>
-
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700">
-                Service Charges
-              </label>
-              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
-                <span className="text-xs text-slate-400 font-mono">₹</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={defaultServiceCharge}
-                  onChange={(e) => setDefaultServiceCharge(e.target.value)}
-                  className="w-full h-7 text-xs font-mono border-none p-0 focus-visible:ring-0 text-slate-900 font-bold shadow-none"
-                />
-              </div>
-            </div>
-
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700">
-                Splitting Charges
-              </label>
-              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
-                <span className="text-xs text-slate-400 font-mono">₹</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={defaultSplittingCharge}
-                  onChange={(e) => setDefaultSplittingCharge(e.target.value)}
-                  className="w-full h-7 text-xs font-mono border-none p-0 focus-visible:ring-0 text-slate-900 font-bold shadow-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              type="submit"
-              disabled={isSavingCharges}
-              className="px-5 py-2.5 h-10 bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold rounded-xl border-none cursor-pointer"
-            >
-              {isSavingCharges ? "Saving Charges..." : "Save Charges"}
-            </Button>
-          </div>
-        </form>
-      </div>
 
       {/* Loading State */}
       {isLoading && (
