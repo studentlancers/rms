@@ -25,16 +25,6 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 
 import { calculateBillTotal } from "@/lib/bill-calculator";
 
-export async function calculateBillTotalAction(
-  subtotal: number,
-  taxRate: number = 0.05,
-  packagingCharge: number = 0,
-  serviceCharge: number = 0,
-  splittingCharge: number = 0
-) {
-  return calculateBillTotal(subtotal, taxRate, packagingCharge, serviceCharge, splittingCharge);
-}
-
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -71,9 +61,11 @@ const createOrderSchema = z.object({
 // Actions
 // ---------------------------------------------------------------------------
 
+import { convertQuantity } from "@/lib/unit-conversion";
+
 /**
  * Creates a new order. Called by staff on behalf of a dine-in/phone/walk-in customer.
- * Includes duplicate active DINE_IN order protection.
+ * Includes duplicate active DINE_IN order protection and inventory stock validation.
  */
 export async function createOrder(data: {
   orderType: OrderType;
@@ -94,7 +86,7 @@ export async function createOrder(data: {
   taxRate?: number;
 }) {
   const ctx = await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = await getActiveRestaurantId();
+  const restaurantId = await getActiveRestaurantId(ctx);
 
   const parsed = createOrderSchema.safeParse(data);
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
@@ -117,23 +109,102 @@ export async function createOrder(data: {
   }
 
   // If a table is supplied, verify it belongs to this restaurant.
-  if (tableId) {
-    const table = await db.table.findFirst({
-      where: { id: tableId, restaurantId },
-    });
-    if (!table) throw new Error("Table not found");
+  const menuItemIds = items.map((i) => i.menuItemId);
 
-    if (orderType === "DINE_IN") {
-      const existingActiveOrder = await db.order.findFirst({
-        where: {
-          restaurantId,
-          tableId,
-          status: { notIn: ["COMPLETED", "CANCELLED"] },
-        },
-      });
-      if (existingActiveOrder) {
+  const [table, existingActiveOrder, dbMenuItems] = await Promise.all([
+    tableId
+      ? db.table.findFirst({ where: { id: tableId, restaurantId } })
+      : Promise.resolve(null),
+    tableId && orderType === "DINE_IN"
+      ? db.order.findFirst({
+          where: {
+            restaurantId,
+            tableId,
+            status: { notIn: ["COMPLETED", "CANCELLED"] },
+          },
+        })
+      : Promise.resolve(null),
+    db.menuItem.findMany({
+      where: { id: { in: menuItemIds }, restaurantId },
+    }),
+  ]);
+
+  if (tableId) {
+    if (!table) throw new Error("Table not found");
+    if (orderType === "DINE_IN" && existingActiveOrder) {
+      throw new Error(
+        `Table ${table.tableNumber} is already occupied by an active order (#ORD-${existingActiveOrder.id.slice(-4).toUpperCase()})`
+      );
+    }
+  }
+  const menuItemMap = new Map(dbMenuItems.map((m) => [m.id, m]));
+
+  for (const item of items) {
+    const menuItem = menuItemMap.get(item.menuItemId);
+    if (!menuItem) {
+      throw new Error(`Menu item "${item.name}" was not found or does not belong to your restaurant.`);
+    }
+    if (!menuItem.isAvailable) {
+      throw new Error(`"${menuItem.name}" is currently marked unavailable.`);
+    }
+  }
+
+  // Aggregate raw material requirements across all ordered items
+  const requiredStockMap = new Map<
+    string,
+    { totalRequired: number; recipeUnit?: string; menuItemName: string }
+  >();
+
+  for (const item of items) {
+    const menuItem = menuItemMap.get(item.menuItemId)!;
+    if (Array.isArray(menuItem.recipe) && menuItem.recipe.length > 0) {
+      for (const ing of menuItem.recipe as any[]) {
+        if (ing.inventoryItemId && ing.quantityRequired > 0) {
+          const qtyForThisItem = ing.quantityRequired * item.quantity;
+          const existingReq = requiredStockMap.get(ing.inventoryItemId);
+          if (existingReq) {
+            existingReq.totalRequired += qtyForThisItem;
+          } else {
+            requiredStockMap.set(ing.inventoryItemId, {
+              totalRequired: qtyForThisItem,
+              recipeUnit: ing.unit,
+              menuItemName: menuItem.name,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if (requiredStockMap.size > 0) {
+    const invItemIds = Array.from(requiredStockMap.keys());
+    const invItems = await db.inventoryItem.findMany({
+      where: { id: { in: invItemIds }, restaurantId },
+    });
+    const invMap = new Map(invItems.map((i) => [i.id, i]));
+
+    for (const [invId, reqInfo] of requiredStockMap.entries()) {
+      const invItem = invMap.get(invId);
+      if (!invItem) {
+        throw new Error(`"${reqInfo.menuItemName}" requires an inventory item that does not exist.`);
+      }
+
+      let requiredInStockUnit = reqInfo.totalRequired;
+      try {
+        requiredInStockUnit = convertQuantity(
+          reqInfo.totalRequired,
+          reqInfo.recipeUnit || invItem.unit,
+          invItem.unit
+        );
+      } catch (conversionErr: any) {
         throw new Error(
-          `Table ${table.tableNumber} is already occupied by an active order (#ORD-${existingActiveOrder.id.slice(-4).toUpperCase()})`
+          `Cannot order "${reqInfo.menuItemName}": Unit mismatch between recipe (${reqInfo.recipeUnit || "unit"}) and inventory stock (${invItem.unit}).`
+        );
+      }
+
+      if (invItem.quantity <= 0 || invItem.quantity < requiredInStockUnit) {
+        throw new Error(
+          `"${reqInfo.menuItemName}" is unavailable because ${invItem.name} stock is insufficient.`
         );
       }
     }
@@ -188,8 +259,8 @@ export async function createOrder(data: {
  * Returns all non-completed orders for the active restaurant.
  */
 export async function listLiveOrders() {
-  await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = await getActiveRestaurantId();
+  const ctx = await requireRole(["owner", "admin", "staff"]);
+  const restaurantId = await getActiveRestaurantId(ctx);
 
   return db.order.findMany({
     where: {
@@ -209,8 +280,8 @@ export async function listOrders(filters?: {
   dateFrom?: Date;
   dateTo?: Date;
 }) {
-  await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = await getActiveRestaurantId();
+  const ctx = await requireRole(["owner", "admin", "staff"]);
+  const restaurantId = await getActiveRestaurantId(ctx);
 
   return db.order.findMany({
     where: {
@@ -239,7 +310,7 @@ export async function updateOrderStatus(
   newStatus: OrderStatus
 ) {
   const ctx = await requireRole(["owner", "admin", "staff"]);
-  const restaurantId = await getActiveRestaurantId();
+  const restaurantId = await getActiveRestaurantId(ctx);
 
   const order = await db.order.findFirst({
     where: { id: orderId, restaurantId },
@@ -297,14 +368,25 @@ export async function updateOrderStatus(
           if (Array.isArray(recipe)) {
             for (const ing of recipe) {
               if (ing.inventoryItemId && ing.quantityRequired > 0) {
-                const totalDeduction = ing.quantityRequired * (item.quantity || 1);
-
                 const invItem = await tx.inventoryItem.findFirst({
                   where: { id: ing.inventoryItemId, restaurantId },
                 });
 
                 if (invItem) {
-                  const newQty = Math.max(0, invItem.quantity - totalDeduction);
+                  const rawRecipeQty = ing.quantityRequired * (item.quantity || 1);
+                  let totalDeductionInStockUnit = rawRecipeQty;
+
+                  try {
+                    totalDeductionInStockUnit = convertQuantity(
+                      rawRecipeQty,
+                      ing.unit || invItem.unit,
+                      invItem.unit
+                    );
+                  } catch {
+                    totalDeductionInStockUnit = rawRecipeQty;
+                  }
+
+                  const newQty = Math.max(0, invItem.quantity - totalDeductionInStockUnit);
                   await tx.inventoryItem.update({
                     where: { id: invItem.id },
                     data: { quantity: newQty },
@@ -314,7 +396,7 @@ export async function updateOrderStatus(
                     data: {
                       restaurantId,
                       inventoryItemId: invItem.id,
-                      quantityChange: -totalDeduction,
+                      quantityChange: -totalDeductionInStockUnit,
                       type: "USAGE",
                       reason: `Order #${orderId.slice(-4).toUpperCase()} completion`,
                       createdById: ctx.userId,

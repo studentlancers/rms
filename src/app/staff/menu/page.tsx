@@ -48,6 +48,10 @@ interface MenuItemData {
   isVeg: boolean;
   isAvailable: boolean;
   variants?: any;
+  recipe?: any;
+  effectiveIsAvailable?: boolean;
+  stockStatus?: "Available" | "Low Stock" | "Out of Stock";
+  maxPortionsAvailable?: number;
 }
 
 export default function StaffMenuPage() {
@@ -331,29 +335,43 @@ export default function StaffMenuPage() {
                           </h3>
                         </div>
 
-                        {/* Availability Toggle Switch */}
-                        <button
-                          onClick={() => handleToggleAvailability(item.id, item.isAvailable)}
-                          className={cn(
-                            "px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1",
-                            item.isAvailable
-                              ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
-                              : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
-                          )}
-                          title="Click to toggle availability in kitchen"
-                        >
-                          {item.isAvailable ? (
-                            <>
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              <span>Available</span>
-                            </>
-                          ) : (
-                            <>
+                        {/* Availability & Stock Status Indicator */}
+                        <div className="flex items-center gap-1.5">
+                          {item.stockStatus === "Out of Stock" || !item.effectiveIsAvailable ? (
+                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-200 flex items-center gap-1">
                               <XCircle className="w-3.5 h-3.5" />
-                              <span>Sold Out</span>
-                            </>
+                              <span>Out of Stock</span>
+                            </span>
+                          ) : item.stockStatus === "Low Stock" ? (
+                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 flex items-center gap-1">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>Low Stock ({item.maxPortionsAvailable} left)</span>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleToggleAvailability(item.id, item.isAvailable)}
+                              className={cn(
+                                "px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1",
+                                item.isAvailable
+                                  ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100"
+                                  : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"
+                              )}
+                              title="Click to toggle manual availability"
+                            >
+                              {item.isAvailable ? (
+                                <>
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  <span>Available</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Sold Out</span>
+                                </>
+                              )}
+                            </button>
                           )}
-                        </button>
+                        </div>
                       </div>
 
                       <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">

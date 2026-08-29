@@ -36,6 +36,7 @@ import {
   CheckCircle2,
   XCircle,
   ShoppingBag,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -92,13 +93,6 @@ export default function StaffOrdersPage() {
       setOrders(fetchedOrders || []);
       setMenuItems(fetchedMenuItems || []);
       setTables(fetchedTables || []);
-
-      if (fetchedTables && fetchedTables.length > 0 && !selectedTableId) {
-        setSelectedTableId(fetchedTables[0].id);
-      }
-      if (fetchedMenuItems && fetchedMenuItems.length > 0 && !selectedMenuItemId) {
-        setSelectedMenuItemId(fetchedMenuItems[0].id);
-      }
     } catch (err: any) {
       console.error("Error loading orders data:", err);
       if (!silent) toast.error(err.message || "Failed to load orders");
@@ -169,9 +163,15 @@ export default function StaffOrdersPage() {
 
   // POS Cart Add Item Helper
   const handleAddToCart = () => {
-    const targetItem = menuItems.find((m) => m.id === selectedMenuItemId);
+    const activeMenuItemId = selectedMenuItemId || (menuItems[0]?.id ?? "");
+    const targetItem = menuItems.find((m) => m.id === activeMenuItemId);
     if (!targetItem) {
       toast.error("Please select a valid menu item");
+      return;
+    }
+
+    if (targetItem.stockStatus === "Out of Stock" || targetItem.effectiveIsAvailable === false) {
+      toast.error(`"${targetItem.name}" is currently Out of Stock due to ingredient availability.`);
       return;
     }
 
@@ -208,7 +208,10 @@ export default function StaffOrdersPage() {
       toast.error("Please add at least one item to the order");
       return;
     }
-    if (orderType === "DINE_IN" && !selectedTableId) {
+
+    const activeTableId = selectedTableId || (tables[0]?.id ?? "");
+
+    if (orderType === "DINE_IN" && !activeTableId) {
       toast.error("Table selection is required for Dine-In orders");
       return;
     }
@@ -217,13 +220,14 @@ export default function StaffOrdersPage() {
     try {
       await createOrder({
         orderType,
-        tableId: orderType === "DINE_IN" ? selectedTableId : undefined,
+        tableId: orderType === "DINE_IN" ? activeTableId : undefined,
         items: cartItems,
       });
 
       toast.success("Order created successfully!");
       setIsCreateModalOpen(false);
       setCartItems([]);
+      setSelectedTableId("");
       await loadOrdersData();
     } catch (err: any) {
       toast.error(err.message || "Failed to create order");
@@ -257,6 +261,20 @@ export default function StaffOrdersPage() {
     }
     return "Order items";
   };
+  // Open Create Order Modal Helper
+  const handleOpenCreateModal = () => {
+    if (tables && tables.length > 0) {
+      if (!selectedTableId || !tables.some((t: any) => t.id === selectedTableId)) {
+        setSelectedTableId(tables[0].id);
+      }
+    }
+    if (menuItems && menuItems.length > 0) {
+      if (!selectedMenuItemId || !menuItems.some((m: any) => m.id === selectedMenuItemId)) {
+        setSelectedMenuItemId(menuItems[0].id);
+      }
+    }
+    setIsCreateModalOpen(true);
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -272,7 +290,7 @@ export default function StaffOrdersPage() {
             Track dine-in, takeaway, and delivery orders placed during current shift.
           </p>
           <Button
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={handleOpenCreateModal}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0052ff] hover:bg-[#0046dc] text-white text-xs font-semibold shadow-md border-none cursor-pointer mt-2"
           >
             <Plus className="w-4 h-4" />
@@ -721,9 +739,9 @@ export default function StaffOrdersPage() {
                   Table Selection *
                 </label>
                 <select
-                  value={selectedTableId}
+                  value={selectedTableId || (tables[0]?.id ?? "")}
                   onChange={(e) => setSelectedTableId(e.target.value)}
-                  className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none"
+                  className="w-full px-3 py-2 h-10 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none cursor-pointer"
                 >
                   {tables.length === 0 ? (
                     <option value="">No tables configured (Takeaway mode)</option>
@@ -744,15 +762,27 @@ export default function StaffOrdersPage() {
             <div className="grid grid-cols-12 gap-2">
               <div className="col-span-7">
                 <select
-                  value={selectedMenuItemId}
+                  value={selectedMenuItemId || (menuItems[0]?.id ?? "")}
                   onChange={(e) => setSelectedMenuItemId(e.target.value)}
-                  className="w-full px-3 py-2 h-9 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none"
+                  className="w-full px-3 py-2 h-9 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none cursor-pointer"
                 >
-                  {menuItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} — ₹{item.price.toFixed(2)}
-                    </option>
-                  ))}
+                  {menuItems.map((item) => {
+                    const statusBadge =
+                      item.stockStatus === "Out of Stock" || item.effectiveIsAvailable === false
+                        ? "🔴 Out of Stock"
+                        : item.stockStatus === "Low Stock"
+                        ? "🟡 Low Stock"
+                        : "🟢 Available";
+
+                    const isOut =
+                      item.stockStatus === "Out of Stock" || item.effectiveIsAvailable === false;
+
+                    return (
+                      <option key={item.id} value={item.id} disabled={isOut}>
+                        {item.name} — ₹{item.price.toFixed(2)} ({statusBadge})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="col-span-3">
@@ -782,17 +812,20 @@ export default function StaffOrdersPage() {
                 <div className="text-xs text-slate-400 italic">No items added yet.</div>
               ) : (
                 cartItems.map((cartItem, idx) => (
-                  <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white rounded border border-slate-200">
+                  <div key={idx} className="flex justify-between items-center text-xs p-2.5 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
                     <span className="font-medium text-slate-800">{cartItem.quantity}x {cartItem.name}</span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
                       <span className="font-mono font-bold text-slate-900">₹{(cartItem.quantity * cartItem.unitPrice).toFixed(2)}</span>
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => handleRemoveFromCart(idx)}
-                        className="text-rose-500 text-xs hover:text-rose-700 cursor-pointer"
+                        className="h-7 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
                       >
-                        ✕
-                      </button>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </Button>
                     </div>
                   </div>
                 ))

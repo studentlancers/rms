@@ -39,6 +39,7 @@ model Session {
   activeOrganizationId String?
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("session")
 }
 
@@ -95,6 +96,8 @@ model Member {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+  @@index([organizationId])
   @@map("member")
 }
 
@@ -203,6 +206,7 @@ model Order {
 
   @@index([restaurantId])
   @@index([restaurantId, status])
+  @@index([restaurantId, createdAt])
   @@index([tableId])
 }
 
@@ -286,6 +290,11 @@ enum MovementType {
   WASTAGE
 }
 
+enum InventoryType {
+  DAILY
+  MONTHLY
+}
+
 enum ExpenseType {
   GENERAL
   INVENTORY
@@ -313,23 +322,49 @@ model Supplier {
 }
 
 model InventoryItem {
-  id              String          @id @default(cuid())
+  id              String              @id @default(cuid())
   restaurantId    String
   name            String
   category        String
-  quantity        Float           @default(0)
-  unit            String          @default("unit")
-  unitCost        Float           @default(0)
-  minReorderLevel Float           @default(10)
+  quantity        Float               @default(0)
+  unit            String              @default("unit")
+  unitCost        Float               @default(0)
+  minReorderLevel Float               @default(10)
+  inventoryType   InventoryType       @default(DAILY)
   supplierId      String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  supplier        Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  supplier        Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   stockMovements  StockMovement[]
   expenses        Expense[]
+  dailyLogs       DailyInventoryLog[]
 
   @@index([restaurantId])
   @@index([restaurantId, category])
+  @@index([restaurantId, inventoryType])
+}
+
+model DailyInventoryLog {
+  id              String        @id @default(cuid())
+  restaurantId    String
+  inventoryItemId String
+  date            DateTime
+  openingStock    Float         @default(0)
+  purchases       Float         @default(0)
+  usage           Float         @default(0)
+  wastage         Float         @default(0)
+  closingStock    Float         @default(0)
+  isClosed        Boolean       @default(false)
+  closedAt        DateTime?
+  closedById      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, inventoryItemId, date])
+  @@index([restaurantId])
+  @@index([restaurantId, date])
+  @@index([inventoryItemId])
 }
 
 model StockMovement {
@@ -440,6 +475,7 @@ model Notification {
 
   @@index([restaurantId])
   @@index([restaurantId, isRead])
+  @@index([restaurantId, createdAt])
 }
 
 

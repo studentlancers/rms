@@ -21,6 +21,7 @@ const createInventoryItemSchema = z.object({
   unit: z.string().min(1, "Unit is required").default("unit"),
   unitCost: z.coerce.number().min(0, "Unit cost cannot be negative").default(0),
   minReorderLevel: z.coerce.number().min(0).default(10),
+  inventoryType: z.enum(["DAILY", "MONTHLY"]).default("DAILY"),
   supplierId: z.string().optional(),
 });
 
@@ -135,6 +136,7 @@ export async function createInventoryItem(data: {
   unit?: string;
   unitCost?: number | string;
   minReorderLevel?: number | string;
+  inventoryType?: "DAILY" | "MONTHLY";
   supplierId?: string;
 }) {
   const ctx = await requireRole(["owner", "admin"]);
@@ -145,7 +147,7 @@ export async function createInventoryItem(data: {
     throw new Error(parsed.error.issues[0].message);
   }
 
-  const { name, category, quantity, unit, unitCost, minReorderLevel, supplierId } = parsed.data;
+  const { name, category, quantity, unit, unitCost, minReorderLevel, inventoryType, supplierId } = parsed.data;
 
   // Atomic database transaction: Create item + initial stock movement entry + Expense entry
   const newItem = await db.$transaction(async (tx) => {
@@ -158,6 +160,7 @@ export async function createInventoryItem(data: {
         unit,
         unitCost,
         minReorderLevel,
+        inventoryType: inventoryType || "DAILY",
         supplierId: supplierId || null,
       },
     });
@@ -321,6 +324,7 @@ export async function updateInventoryItem(
     unit: string;
     unitCost: number;
     minReorderLevel: number;
+    inventoryType: "DAILY" | "MONTHLY";
     supplierId: string;
   }>
 ) {
@@ -366,21 +370,38 @@ export async function deleteInventoryItem(inventoryItemId: string) {
 
 /**
  * Lists stock movements for an inventory item or the active restaurant.
+ * Supports filtering by inventoryItemId and movement type.
  */
-export async function listStockMovements(inventoryItemId?: string) {
+export async function listStockMovements(filters?: {
+  inventoryItemId?: string;
+  type?: string;
+  limit?: number;
+}) {
   try {
     await requireRole(["owner", "admin", "staff"]);
     const restaurantId = await getActiveRestaurantId();
 
+    const invItemId = typeof filters === "string" ? filters : filters?.inventoryItemId;
+    const movType = typeof filters === "object" ? filters?.type : undefined;
+    const limit = typeof filters === "object" && filters?.limit ? filters.limit : 100;
+
     return await db.stockMovement.findMany({
       where: {
         restaurantId,
-        ...(inventoryItemId ? { inventoryItemId } : {}),
+        ...(invItemId && invItemId !== "ALL" ? { inventoryItemId: invItemId } : {}),
+        ...(movType && movType !== "ALL" ? { type: movType as MovementType } : {}),
       },
       orderBy: { createdAt: "desc" },
-      take: 50,
+      take: limit,
       include: {
-        inventoryItem: true,
+        inventoryItem: {
+          select: {
+            id: true,
+            name: true,
+            unit: true,
+            category: true,
+          },
+        },
       },
     });
   } catch (error) {
@@ -401,10 +422,11 @@ export async function exportInventoryCSV() {
     orderBy: { category: "asc" },
   });
 
-  const headers = ["Item Name", "Category", "Quantity On Hand", "Unit", "Unit Cost (INR)", "Total Value (INR)", "Status"];
+  const headers = ["Item Name", "Category", "Tracking Type", "Quantity On Hand", "Unit", "Unit Cost (INR)", "Total Value (INR)", "Status"];
   const rows = items.map((item) => [
     `"${item.name.replace(/"/g, '""')}"`,
     `"${item.category.replace(/"/g, '""')}"`,
+    `"${item.inventoryType}"`,
     item.quantity.toString(),
     `"${item.unit}"`,
     item.unitCost.toFixed(2),
@@ -413,4 +435,446 @@ export async function exportInventoryCSV() {
   ]);
 
   return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Daily & Monthly Inventory Ledger Actions
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns daily inventory ledger for a target date (defaults to today).
+ * Calculates Opening Stock, Purchases, Usage, Wastage, System Closing Stock, and Physical Closing Stock.
+ */
+export async function getDailyInventoryLedger(targetDateStr?: string) {
+  await requireRole(["owner", "admin", "staff"]);
+  const restaurantId = await getActiveRestaurantId();
+
+  const targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
+  const dayStart = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0));
+  const dayEnd = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999));
+
+  const inventoryItems = await db.inventoryItem.findMany({
+    where: { restaurantId },
+    orderBy: { name: "asc" },
+    include: { supplier: true },
+  });
+
+  const logs: Array<{
+    inventoryItemId: string;
+    name: string;
+    category: string;
+    unit: string;
+    inventoryType: "DAILY" | "MONTHLY";
+    openingStock: number;
+    purchases: number;
+    usage: number;
+    wastage: number;
+    systemClosing: number;
+    closingStock: number;
+    isClosed: boolean;
+    closedAt?: string;
+    status: "Healthy" | "Low";
+  }> = [];
+
+  let totalOpening = 0;
+  let totalPurchases = 0;
+  let totalUsage = 0;
+  let totalWastage = 0;
+  let totalClosing = 0;
+
+  for (const item of inventoryItems) {
+    let log = await db.dailyInventoryLog.findFirst({
+      where: { restaurantId, inventoryItemId: item.id, date: dayStart },
+    });
+
+    let openingStock = 0;
+
+    if (log) {
+      openingStock = log.openingStock;
+    } else {
+      // Auto-Opening: Find previous day's closed log closingStock
+      const prevLog = await db.dailyInventoryLog.findFirst({
+        where: {
+          restaurantId,
+          inventoryItemId: item.id,
+          date: { lt: dayStart },
+        },
+        orderBy: { date: "desc" },
+      });
+
+      openingStock = prevLog ? prevLog.closingStock : item.quantity;
+
+      try {
+        log = await db.dailyInventoryLog.create({
+          data: {
+            restaurantId,
+            inventoryItemId: item.id,
+            date: dayStart,
+            openingStock,
+            closingStock: openingStock,
+            isClosed: false,
+          },
+        });
+      } catch {
+        log = await db.dailyInventoryLog.findFirst({
+          where: { restaurantId, inventoryItemId: item.id, date: dayStart },
+        });
+      }
+    }
+
+    // Aggregate movements for the day
+    const dayMovements = await db.stockMovement.findMany({
+      where: {
+        restaurantId,
+        inventoryItemId: item.id,
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+    });
+
+    let dayPurchases = 0;
+    let dayUsage = 0;
+    let dayWastage = 0;
+    let dayAdjustments = 0;
+
+    for (const m of dayMovements) {
+      if (m.type === "PURCHASE") {
+        dayPurchases += m.quantityChange;
+      } else if (m.type === "USAGE") {
+        dayUsage += Math.abs(m.quantityChange);
+      } else if (m.type === "WASTAGE") {
+        dayWastage += Math.abs(m.quantityChange);
+      } else if (m.type === "ADJUSTMENT") {
+        dayAdjustments += m.quantityChange;
+      }
+    }
+
+    const systemClosing = Math.max(
+      0,
+      openingStock + dayPurchases - dayUsage - dayWastage + dayAdjustments
+    );
+    const isClosed = log?.isClosed || false;
+    const closingStock = isClosed ? (log?.closingStock ?? systemClosing) : systemClosing;
+
+    totalOpening += openingStock;
+    totalPurchases += dayPurchases;
+    totalUsage += dayUsage;
+    totalWastage += dayWastage;
+    totalClosing += closingStock;
+
+    logs.push({
+      inventoryItemId: item.id,
+      name: item.name,
+      category: item.category,
+      unit: item.unit,
+      inventoryType: item.inventoryType as "DAILY" | "MONTHLY",
+      openingStock,
+      purchases: dayPurchases,
+      usage: dayUsage,
+      wastage: dayWastage,
+      systemClosing,
+      closingStock,
+      isClosed,
+      closedAt: log?.closedAt ? log.closedAt.toISOString() : undefined,
+      status: closingStock <= item.minReorderLevel ? "Low" : "Healthy",
+    });
+  }
+
+  return {
+    date: dayStart.toISOString(),
+    items: logs,
+    totals: {
+      totalOpening,
+      totalPurchases,
+      totalUsage,
+      totalWastage,
+      totalClosing,
+    },
+  };
+}
+
+/**
+ * Closes today's (or target date's) daily inventory.
+ * Compares physical count against system closing stock, records ADJUSTMENT movement if different,
+ * and sets `isClosed = true` with final closing stock balance.
+ */
+export async function closeDayInventory(data: {
+  dateStr?: string;
+  items: Array<{ inventoryItemId: string; actualPhysicalStock: number }>;
+}) {
+  const ctx = await requireRole(["owner", "admin"]);
+  const restaurantId = await getActiveRestaurantId();
+
+  const targetDate = data.dateStr ? new Date(data.dateStr) : new Date();
+  const dayStart = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0));
+  const dayEnd = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999));
+
+  return await db.$transaction(async (tx) => {
+    for (const inputItem of data.items) {
+      const invItem = await tx.inventoryItem.findFirst({
+        where: { id: inputItem.inventoryItemId, restaurantId },
+      });
+      if (!invItem) continue;
+
+      let log = await tx.dailyInventoryLog.findFirst({
+        where: { restaurantId, inventoryItemId: invItem.id, date: dayStart },
+      });
+
+      const openingStock = log ? log.openingStock : invItem.quantity;
+
+      const dayMovements = await tx.stockMovement.findMany({
+        where: {
+          restaurantId,
+          inventoryItemId: invItem.id,
+          createdAt: { gte: dayStart, lte: dayEnd },
+        },
+      });
+
+      let dayPurchases = 0;
+      let dayUsage = 0;
+      let dayWastage = 0;
+      let dayAdjustments = 0;
+
+      for (const m of dayMovements) {
+        if (m.type === "PURCHASE") dayPurchases += m.quantityChange;
+        else if (m.type === "USAGE") dayUsage += Math.abs(m.quantityChange);
+        else if (m.type === "WASTAGE") dayWastage += Math.abs(m.quantityChange);
+        else if (m.type === "ADJUSTMENT") dayAdjustments += m.quantityChange;
+      }
+
+      const systemClosing = Math.max(0, openingStock + dayPurchases - dayUsage - dayWastage + dayAdjustments);
+      const actualPhysical = Math.max(0, inputItem.actualPhysicalStock);
+      const difference = actualPhysical - systemClosing;
+
+      if (Math.abs(difference) > 0.0001) {
+        await tx.stockMovement.create({
+          data: {
+            restaurantId,
+            inventoryItemId: invItem.id,
+            quantityChange: difference,
+            type: "ADJUSTMENT",
+            reason: `Daily closing physical stock adjustment (${actualPhysical} actual vs ${systemClosing.toFixed(2)} system)`,
+            createdById: ctx.userId,
+          },
+        });
+
+        await tx.inventoryItem.update({
+          where: { id: invItem.id },
+          data: { quantity: actualPhysical },
+        });
+      }
+
+      if (log) {
+        await tx.dailyInventoryLog.update({
+          where: { id: log.id },
+          data: {
+            purchases: dayPurchases,
+            usage: dayUsage,
+            wastage: dayWastage,
+            closingStock: actualPhysical,
+            isClosed: true,
+            closedAt: new Date(),
+            closedById: ctx.userId,
+          },
+        });
+      } else {
+        await tx.dailyInventoryLog.create({
+          data: {
+            restaurantId,
+            inventoryItemId: invItem.id,
+            date: dayStart,
+            openingStock,
+            purchases: dayPurchases,
+            usage: dayUsage,
+            wastage: dayWastage,
+            closingStock: actualPhysical,
+            isClosed: true,
+            closedAt: new Date(),
+            closedById: ctx.userId,
+          },
+        });
+      }
+    }
+
+    revalidatePath("/dashboard", "layout");
+    revalidatePath("/staff/inventory");
+    return { success: true };
+  });
+}
+
+/**
+ * Records stock wastage for an inventory item.
+ * Updates quantity, logs WASTAGE StockMovement, and revalidates paths.
+ */
+export async function recordWastage(data: {
+  inventoryItemId: string;
+  quantity: number;
+  reason?: string;
+}) {
+  const ctx = await requireRole(["owner", "admin", "staff"]);
+  const restaurantId = await getActiveRestaurantId();
+
+  const existing = await db.inventoryItem.findFirst({
+    where: { id: data.inventoryItemId, restaurantId },
+  });
+  if (!existing) throw new Error("Inventory item not found");
+
+  const wastageQty = Math.abs(data.quantity);
+  if (wastageQty <= 0) throw new Error("Wastage quantity must be positive");
+
+  const updated = await db.$transaction(async (tx) => {
+    const newQty = Math.max(0, existing.quantity - wastageQty);
+    const item = await tx.inventoryItem.update({
+      where: { id: existing.id },
+      data: { quantity: newQty },
+    });
+
+    await tx.stockMovement.create({
+      data: {
+        restaurantId,
+        inventoryItemId: existing.id,
+        quantityChange: -wastageQty,
+        type: "WASTAGE",
+        reason: data.reason || "Manual wastage record",
+        createdById: ctx.userId,
+      },
+    });
+
+    return item;
+  });
+
+  revalidatePath("/dashboard", "layout");
+  revalidatePath("/staff/inventory");
+  return updated;
+}
+
+/**
+ * Returns monthly inventory ledger for a target year & month.
+ * Aggregates month opening, total monthly purchases, usage, wastage, and month-end closing stock.
+ */
+export async function getMonthlyInventoryLedger(year?: number, month?: number) {
+  await requireRole(["owner", "admin", "staff"]);
+  const restaurantId = await getActiveRestaurantId();
+
+  const now = new Date();
+  const targetYear = year || now.getFullYear();
+  const targetMonth = month !== undefined ? month : now.getMonth();
+
+  const monthStart = new Date(Date.UTC(targetYear, targetMonth, 1, 0, 0, 0, 0));
+  const monthEnd = new Date(Date.UTC(targetYear, targetMonth + 1, 0, 23, 59, 59, 999));
+
+  const inventoryItems = await db.inventoryItem.findMany({
+    where: { restaurantId },
+    orderBy: { name: "asc" },
+  });
+
+  const logs: Array<{
+    inventoryItemId: string;
+    name: string;
+    category: string;
+    unit: string;
+    inventoryType: "DAILY" | "MONTHLY";
+    openingStock: number;
+    purchases: number;
+    usage: number;
+    wastage: number;
+    closingStock: number;
+  }> = [];
+
+  let totalOpening = 0;
+  let totalPurchases = 0;
+  let totalUsage = 0;
+  let totalWastage = 0;
+  let totalClosing = 0;
+
+  for (const item of inventoryItems) {
+    const prevLog = await db.dailyInventoryLog.findFirst({
+      where: {
+        restaurantId,
+        inventoryItemId: item.id,
+        date: { lt: monthStart },
+      },
+      orderBy: { date: "desc" },
+    });
+
+    const firstLogInMonth = await db.dailyInventoryLog.findFirst({
+      where: {
+        restaurantId,
+        inventoryItemId: item.id,
+        date: { gte: monthStart, lte: monthEnd },
+      },
+      orderBy: { date: "asc" },
+    });
+
+    const monthOpening = prevLog
+      ? prevLog.closingStock
+      : firstLogInMonth
+      ? firstLogInMonth.openingStock
+      : item.quantity;
+
+    const monthMovements = await db.stockMovement.findMany({
+      where: {
+        restaurantId,
+        inventoryItemId: item.id,
+        createdAt: { gte: monthStart, lte: monthEnd },
+      },
+    });
+
+    let monthPurchases = 0;
+    let monthUsage = 0;
+    let monthWastage = 0;
+    let monthAdjustments = 0;
+
+    for (const m of monthMovements) {
+      if (m.type === "PURCHASE") monthPurchases += m.quantityChange;
+      else if (m.type === "USAGE") monthUsage += Math.abs(m.quantityChange);
+      else if (m.type === "WASTAGE") monthWastage += Math.abs(m.quantityChange);
+      else if (m.type === "ADJUSTMENT") monthAdjustments += m.quantityChange;
+    }
+
+    const lastLogInMonth = await db.dailyInventoryLog.findFirst({
+      where: {
+        restaurantId,
+        inventoryItemId: item.id,
+        date: { gte: monthStart, lte: monthEnd },
+        isClosed: true,
+      },
+      orderBy: { date: "desc" },
+    });
+
+    const monthClosing = lastLogInMonth
+      ? lastLogInMonth.closingStock
+      : Math.max(0, monthOpening + monthPurchases - monthUsage - monthWastage + monthAdjustments);
+
+    totalOpening += monthOpening;
+    totalPurchases += monthPurchases;
+    totalUsage += monthUsage;
+    totalWastage += monthWastage;
+    totalClosing += monthClosing;
+
+    logs.push({
+      inventoryItemId: item.id,
+      name: item.name,
+      category: item.category,
+      unit: item.unit,
+      inventoryType: item.inventoryType as "DAILY" | "MONTHLY",
+      openingStock: monthOpening,
+      purchases: monthPurchases,
+      usage: monthUsage,
+      wastage: monthWastage,
+      closingStock: monthClosing,
+    });
+  }
+
+  return {
+    year: targetYear,
+    month: targetMonth,
+    items: logs,
+    totals: {
+      totalOpening,
+      totalPurchases,
+      totalUsage,
+      totalWastage,
+      totalClosing,
+    },
+  };
 }

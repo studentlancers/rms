@@ -41,6 +41,7 @@ import {
   toggleMenuItemAvailability,
   deleteMenuItem,
 } from "@/actions/menu";
+import { listInventoryItems } from "@/actions/inventory";
 
 interface CategoryData {
   id: string;
@@ -59,6 +60,10 @@ interface MenuItemData {
   isVeg: boolean;
   isAvailable: boolean;
   variants?: any;
+  recipe?: any;
+  effectiveIsAvailable?: boolean;
+  stockStatus?: "Available" | "Low Stock" | "Out of Stock";
+  maxPortionsAvailable?: number;
 }
 
 export default function MenuModulePage() {
@@ -67,6 +72,10 @@ export default function MenuModulePage() {
   // Dynamic Data States
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItemData[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [recipeIngredients, setRecipeIngredients] = useState<
+    Array<{ inventoryItemId: string; quantityRequired: number; unit: string }>
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -103,12 +112,14 @@ export default function MenuModulePage() {
   const loadMenuData = async () => {
     try {
       setIsLoading(true);
-      const [cats, items] = await Promise.all([
+      const [cats, items, invItems] = await Promise.all([
         listCategories(),
         listMenuItems(),
+        listInventoryItems(),
       ]);
       setCategories(cats || []);
       setMenuItems(items || []);
+      setInventoryItems(invItems || []);
       if (cats && cats.length > 0 && !menuCategory) {
         setMenuCategory(cats[0].id);
       }
@@ -196,6 +207,37 @@ export default function MenuModulePage() {
     }
   };
 
+  // Recipe Helper Handlers
+  const handleAddRecipeRow = () => {
+    if (!inventoryItems || inventoryItems.length === 0) {
+      toast.error("No inventory items found. Please register stock items in the Inventory section first.");
+      return;
+    }
+    const firstItem = inventoryItems[0];
+    setRecipeIngredients((prev) => [
+      ...prev,
+      { inventoryItemId: firstItem.id, quantityRequired: 1, unit: firstItem.unit || "g" },
+    ]);
+  };
+
+  const handleUpdateRecipeRow = (index: number, field: string, value: any) => {
+    setRecipeIngredients((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      if (field === "inventoryItemId") {
+        const selectedInv = inventoryItems.find((inv) => inv.id === value);
+        if (selectedInv && selectedInv.unit) {
+          updated[index].unit = selectedInv.unit;
+        }
+      }
+      return updated;
+    });
+  };
+
+  const handleRemoveRecipeRow = (index: number) => {
+    setRecipeIngredients((prev) => prev.filter((_, i) => i !== index));
+  };
+
   // Open Edit Menu Item Modal
   const openEditMenu = (item: MenuItemData) => {
     setEditingMenuItem(item);
@@ -206,6 +248,19 @@ export default function MenuModulePage() {
     setMenuIsVeg(item.isVeg || false);
     setMenuAvailable(item.isAvailable);
     setMenuIsSpecial(isItemSpecial(item));
+
+    if (Array.isArray(item.recipe) && item.recipe.length > 0) {
+      setRecipeIngredients(
+        item.recipe.map((r: any) => ({
+          inventoryItemId: r.inventoryItemId,
+          quantityRequired: Number(r.quantityRequired) || 1,
+          unit: r.unit || "g",
+        }))
+      );
+    } else {
+      setRecipeIngredients([]);
+    }
+
     setIsAddMenuOpen(true);
   };
 
@@ -221,6 +276,7 @@ export default function MenuModulePage() {
     setMenuIsVeg(false);
     setMenuAvailable(true);
     setMenuIsSpecial(false);
+    setRecipeIngredients([]);
     setIsAddMenuOpen(true);
   };
 
@@ -240,6 +296,18 @@ export default function MenuModulePage() {
       return;
     }
 
+    // Validate recipe ingredients
+    for (const ing of recipeIngredients) {
+      if (!ing.inventoryItemId) {
+        toast.error("Please select an inventory item for all recipe rows");
+        return;
+      }
+      if (ing.quantityRequired <= 0) {
+        toast.error("Required quantity must be greater than 0");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const specialVariants = menuIsSpecial ? [{ name: "special", priceModifier: 0 }] : undefined;
@@ -253,6 +321,7 @@ export default function MenuModulePage() {
           isVeg: menuIsVeg,
           isAvailable: menuAvailable,
           variants: specialVariants ?? [],
+          recipe: recipeIngredients,
         });
         toast.success("Menu item updated successfully");
       } else {
@@ -265,6 +334,9 @@ export default function MenuModulePage() {
         formData.append("isAvailable", String(menuAvailable));
         if (specialVariants) {
           formData.append("variants", JSON.stringify(specialVariants));
+        }
+        if (recipeIngredients.length > 0) {
+          formData.append("recipe", JSON.stringify(recipeIngredients));
         }
 
         await createMenuItem(formData);
@@ -880,6 +952,102 @@ export default function MenuModulePage() {
               placeholder="Ingredients, preparation details, allergens..."
               className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600/20"
             />
+          </div>
+
+          {/* Inventory Requirements (Recipe / BOM) Section */}
+          <div className="pt-3 border-t border-slate-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-xs font-semibold text-slate-900">
+                  Inventory Requirements (Recipe)
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Map raw material dependencies to validate stock & auto-deduct on completion.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddRecipeRow}
+                className="text-xs h-8 px-3 rounded-lg border-slate-200 text-blue-600 hover:bg-blue-50 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                <span>Add Inventory Item</span>
+              </Button>
+            </div>
+
+            {recipeIngredients.length === 0 ? (
+              <div className="text-xs text-slate-400 bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-center">
+                No inventory dependencies linked to this dish.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {recipeIngredients.map((row, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200/70"
+                  >
+                    <select
+                      value={row.inventoryItemId}
+                      onChange={(e) =>
+                        handleUpdateRecipeRow(idx, "inventoryItemId", e.target.value)
+                      }
+                      className="flex-1 px-2.5 py-1.5 h-9 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none"
+                    >
+                      {inventoryItems.map((inv) => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.name} ({inv.quantity} {inv.unit} on hand)
+                        </option>
+                      ))}
+                    </select>
+
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={row.quantityRequired}
+                      onChange={(e) =>
+                        handleUpdateRecipeRow(
+                          idx,
+                          "quantityRequired",
+                          parseFloat(e.target.value) || 0
+                        )
+                      }
+                      placeholder="Qty"
+                      className="w-20 px-2 py-1.5 h-9 text-xs rounded-lg font-mono"
+                    />
+
+                    <select
+                      value={row.unit}
+                      onChange={(e) =>
+                        handleUpdateRecipeRow(idx, "unit", e.target.value)
+                      }
+                      className="w-24 px-2 py-1.5 h-9 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none"
+                    >
+                      <option value="kg">kg</option>
+                      <option value="g">g</option>
+                      <option value="l">l</option>
+                      <option value="ml">ml</option>
+                      <option value="pcs">pcs</option>
+                      <option value="portions">portions</option>
+                      <option value="bottles">bottles</option>
+                      <option value="units">units</option>
+                    </select>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveRecipeRow(idx)}
+                      className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-6 pt-2 flex-wrap">

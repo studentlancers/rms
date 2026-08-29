@@ -8,6 +8,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 
+import { convertQuantity } from "@/lib/unit-conversion";
+
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
@@ -15,6 +17,12 @@ import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 const categorySchema = z.object({
   name: z.string().min(1, "Category name is required"),
   sortOrder: z.coerce.number().int().default(0),
+});
+
+const recipeIngredientSchema = z.object({
+  inventoryItemId: z.string().min(1, "Inventory item ID is required"),
+  quantityRequired: z.coerce.number().positive("Quantity required must be positive"),
+  unit: z.string().optional(),
 });
 
 const menuItemSchema = z.object({
@@ -32,12 +40,30 @@ const menuItemSchema = z.object({
       })
     )
     .optional(),
+  recipe: z.array(recipeIngredientSchema).optional(),
 });
 
 // Helper check for special variant
 function checkIsSpecialVariant(variants?: any[]): boolean {
   if (!variants || !Array.isArray(variants)) return false;
   return variants.some((v: any) => v && (v.name === "special" || v.isSpecial === true));
+}
+
+// Helper to validate recipe items against active tenant's inventory
+async function validateRecipeTenantIsolation(
+  restaurantId: string,
+  recipe?: Array<{ inventoryItemId: string; quantityRequired: number; unit?: string }>
+) {
+  if (!recipe || recipe.length === 0) return;
+
+  for (const ing of recipe) {
+    const invItem = await db.inventoryItem.findFirst({
+      where: { id: ing.inventoryItemId, restaurantId },
+    });
+    if (!invItem) {
+      throw new Error("Selected inventory item does not belong to your restaurant or was not found.");
+    }
+  }
 }
 
 // Atomic Sync Helper for DailySpecial
@@ -216,13 +242,78 @@ export async function deleteCategory(categoryId: string) {
 export async function listMenuItems(categoryId?: string) {
   const restaurantId = await getActiveRestaurantId();
 
-  return db.menuItem.findMany({
-    where: {
-      restaurantId,
-      ...(categoryId ? { categoryId } : {}),
-    },
-    orderBy: { name: "asc" },
-    include: { category: true },
+  const [items, inventoryItems] = await Promise.all([
+    db.menuItem.findMany({
+      where: {
+        restaurantId,
+        ...(categoryId ? { categoryId } : {}),
+      },
+      orderBy: { name: "asc" },
+      include: { category: true },
+    }),
+    db.inventoryItem.findMany({
+      where: { restaurantId },
+    }),
+  ]);
+
+  const inventoryMap = new Map(inventoryItems.map((inv) => [inv.id, inv]));
+
+  return items.map((item) => {
+    let stockStatus: "Available" | "Low Stock" | "Out of Stock" = item.isAvailable ? "Available" : "Out of Stock";
+    let maxPortionsAvailable = 999;
+    let effectiveIsAvailable = item.isAvailable;
+
+    if (Array.isArray(item.recipe) && (item.recipe as any[]).length > 0) {
+      let minPortions = Infinity;
+
+      for (const ing of item.recipe as any[]) {
+        if (!ing.inventoryItemId || !(ing.quantityRequired > 0)) continue;
+        const inv = inventoryMap.get(ing.inventoryItemId);
+        if (!inv) {
+          minPortions = 0;
+          break;
+        }
+
+        try {
+          const reqInStockUnit = convertQuantity(
+            ing.quantityRequired,
+            ing.unit || inv.unit,
+            inv.unit
+          );
+          if (reqInStockUnit <= 0) continue;
+          const portions = Math.floor(inv.quantity / reqInStockUnit);
+          if (portions < minPortions) {
+            minPortions = portions;
+          }
+        } catch {
+          minPortions = 0;
+          break;
+        }
+      }
+
+      if (minPortions === Infinity) minPortions = 999;
+      maxPortionsAvailable = Math.max(0, minPortions);
+
+      if (maxPortionsAvailable <= 0) {
+        stockStatus = "Out of Stock";
+        effectiveIsAvailable = false;
+      } else if (maxPortionsAvailable <= 3) {
+        stockStatus = "Low Stock";
+        effectiveIsAvailable = item.isAvailable;
+      } else {
+        stockStatus = item.isAvailable ? "Available" : "Out of Stock";
+        effectiveIsAvailable = item.isAvailable;
+      }
+    } else {
+      effectiveIsAvailable = item.isAvailable;
+    }
+
+    return {
+      ...item,
+      effectiveIsAvailable,
+      stockStatus,
+      maxPortionsAvailable,
+    };
   });
 }
 
@@ -231,6 +322,8 @@ export async function createMenuItem(formData: FormData) {
   const restaurantId = await getActiveRestaurantId();
 
   const variantsRaw = formData.get("variants");
+  const recipeRaw = formData.get("recipe");
+
   const parsed = menuItemSchema.safeParse({
     categoryId: formData.get("categoryId"),
     name: formData.get("name"),
@@ -239,6 +332,7 @@ export async function createMenuItem(formData: FormData) {
     isVeg: formData.get("isVeg"),
     isAvailable: formData.get("isAvailable") ?? true,
     variants: variantsRaw ? JSON.parse(variantsRaw as string) : undefined,
+    recipe: recipeRaw ? JSON.parse(recipeRaw as string) : undefined,
   });
   if (!parsed.success) throw new Error(parsed.error.issues[0].message);
 
@@ -246,6 +340,8 @@ export async function createMenuItem(formData: FormData) {
     where: { id: parsed.data.categoryId, restaurantId },
   });
   if (!category) throw new Error("Category not found");
+
+  await validateRecipeTenantIsolation(restaurantId, parsed.data.recipe);
 
   const isSpecial = checkIsSpecialVariant(parsed.data.variants);
 
@@ -273,6 +369,7 @@ export async function updateMenuItem(
     isAvailable: boolean;
     categoryId: string;
     variants: Array<{ name: string; priceModifier: number }>;
+    recipe: Array<{ inventoryItemId: string; quantityRequired: number; unit?: string }>;
   }>
 ) {
   await requireRole(["owner", "admin"]);
@@ -282,6 +379,10 @@ export async function updateMenuItem(
     where: { id: menuItemId, restaurantId },
   });
   if (!existing) throw new Error("Menu item not found");
+
+  if (data.recipe) {
+    await validateRecipeTenantIsolation(restaurantId, data.recipe);
+  }
 
   const isSpecialProvided = data.variants !== undefined;
   const isSpecial = isSpecialProvided

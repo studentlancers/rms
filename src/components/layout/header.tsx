@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { formatDistanceToNow } from "date-fns";
 import {
   Bell,
   Menu,
@@ -71,17 +72,21 @@ export default function Header({
     venueText ||
     `${activeOrg?.name || "Grand Bistro"} · ${isStaff ? "Staff Workspace" : "Main Operations"}`;
 
+  const isFetchingRef = useRef(false);
+
   const loadNotificationsData = async () => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const data = await listNotifications();
       setNotifications(
-        data.map((n) => ({
+        (data || []).map((n) => ({
           id: n.id,
           title: n.title,
           description: n.message,
-          time: new Date(n.createdAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
+          time: formatDistanceToNow(new Date(n.createdAt), {
+            addSuffix: true,
           }),
           unread: !n.isRead,
           type: n.type as "warning" | "success" | "info",
@@ -89,6 +94,8 @@ export default function Header({
       );
     } catch (err) {
       console.error("Error fetching notifications:", err);
+    } finally {
+      isFetchingRef.current = false;
     }
   };
 

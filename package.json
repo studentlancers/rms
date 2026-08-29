@@ -15,7 +15,6 @@
     "@better-auth/api-key": "^1.6.25",
     "@better-auth/oauth-provider": "^1.6.25",
     "@better-auth/passkey": "^1.6.25",
-    "@google/generative-ai": "^0.24.1",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@shadcn/react": "^0.2.1",

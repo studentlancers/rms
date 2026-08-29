@@ -146,8 +146,10 @@ export async function requireSuperAdmin(): Promise<SuperAdminContext> {
  * For Super Admins, resolves their active organization, their first organization,
  * or falls back to the first available active organization in the database.
  */
-export async function getActiveRestaurantId(): Promise<string> {
-  const ctx = await getRestaurantContext();
+export async function getActiveRestaurantId(
+  existingCtx?: AuthContext
+): Promise<string> {
+  const ctx = existingCtx ?? (await getRestaurantContext());
   if (!ctx.isSuperAdmin) {
     return (ctx as RestaurantContext).restaurantId;
   }
