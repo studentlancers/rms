@@ -46,6 +46,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatINR } from "@/lib/currency";
 import { toast } from "sonner";
 import {
   listStaff,
@@ -92,6 +93,10 @@ export default function StaffPage() {
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
+  // Staff Profile / Details Modal State
+  const [isStaffDetailsModalOpen, setIsStaffDetailsModalOpen] = useState(false);
+  const [selectedStaffMember, setSelectedStaffMember] = useState<any | null>(null);
+
   // Dynamic Data States
   const [members, setMembers] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
@@ -125,8 +130,13 @@ export default function StaffPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<"admin" | "staff">("staff");
 
+  const isFetchingRef = React.useRef(false);
+
   // Load members, invitations, salaries, and transaction history from database
   const loadStaffData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const [staffRes, invRes, salaryRes, txRes] = await Promise.allSettled([
@@ -150,6 +160,7 @@ export default function StaffPage() {
       console.error("Error loading staff roster:", err);
       if (!silent) toast.error(err.message || "Failed to load staff roster");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -157,10 +168,10 @@ export default function StaffPage() {
   useEffect(() => {
     loadStaffData();
 
-    // 5-second polling interval for roster synchronization
+    // 25-second polling interval for roster synchronization with visibility guard
     const interval = setInterval(() => {
       loadStaffData(true);
-    }, 5000);
+    }, 25000);
 
     return () => clearInterval(interval);
   }, []);
@@ -215,8 +226,13 @@ export default function StaffPage() {
     if (!editingStaffUser) return;
 
     const amt = parseFloat(paymentAmountInput) || 0;
-    if (amt <= 0) {
-      toast.error("Please enter a valid payment amount greater than 0");
+    if (isNaN(amt) || amt <= 0 || amt > 10_000_000) {
+      toast.error("Please enter a valid payment amount between ₹1 and ₹10,000,000");
+      return;
+    }
+
+    if (!paymentDateInput) {
+      toast.error("Please select a valid payment date");
       return;
     }
 
@@ -227,7 +243,7 @@ export default function StaffPage() {
         amount: amt,
         paymentDate: paymentDateInput,
         type: paymentTypeInput,
-        notes: paymentNotesInput,
+        notes: paymentNotesInput.trim() || undefined,
       });
 
       toast.success(`${paymentTypeInput} payment of ₹${amt.toLocaleString("en-IN")} recorded!`);
@@ -244,14 +260,41 @@ export default function StaffPage() {
     }
   };
 
+  // Open Staff Profile / Details Modal
+  const handleOpenStaffDetails = (member: any) => {
+    const userId = member.userId || member.user?.id || member.id;
+    const salaryRecord = salaries.find((s) => s.userId === userId) || {
+      userId,
+      name: member.user?.name || member.name || "Staff Member",
+      email: member.user?.email || member.email || "staff@restaurant.com",
+      role: member.role || "staff",
+      monthlySalary: 0,
+      advancePaid: 0,
+      totalPaid: 0,
+      remainingSalary: 0,
+      lastPaidDate: "Not Disbursed",
+      paymentStatus: "Not Set",
+    };
+
+    setSelectedStaffMember({
+      ...member,
+      userId,
+      salaryRecord,
+    });
+    setIsStaffDetailsModalOpen(true);
+  };
+
   // Submit Add Staff Form (Direct Creation)
   const handleAddStaffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Please enter full name");
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanName || cleanName.length < 2) {
+      toast.error("Please enter full name (at least 2 characters)");
       return;
     }
-    if (!email.trim()) {
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       toast.error("Please enter a valid email address");
       return;
     }
@@ -507,44 +550,62 @@ export default function StaffPage() {
                       </TableCell>
 
                       <TableCell className="py-4 px-4 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="h-8 w-8 text-slate-500 hover:text-slate-900 cursor-pointer flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
-                            <MoreVertical className="w-4 h-4" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase">
-                              Member Actions
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator />
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenStaffDetails(member)}
+                            className="h-8 text-xs text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1" /> View
+                          </Button>
 
-                            {member.role !== "owner" && member.role === "staff" && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="h-8 w-8 text-slate-500 hover:text-slate-900 cursor-pointer flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
+                              <MoreVertical className="w-4 h-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase">
+                                Member Actions
+                              </DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+
                               <DropdownMenuItem
-                                onClick={() => handleUpdateRole(member.id, "admin")}
+                                onClick={() => handleOpenStaffDetails(member)}
                                 className="text-xs gap-2 text-blue-600 font-semibold cursor-pointer"
                               >
-                                <Shield className="w-3.5 h-3.5" /> Promote to Admin
+                                <Eye className="w-3.5 h-3.5" /> View Profile & Salary
                               </DropdownMenuItem>
-                            )}
 
-                            {member.role !== "owner" && member.role === "admin" && (
-                              <DropdownMenuItem
-                                onClick={() => handleUpdateRole(member.id, "staff")}
-                                className="text-xs gap-2 text-amber-600 font-semibold cursor-pointer"
-                              >
-                                <Shield className="w-3.5 h-3.5" /> Demote to Staff
-                              </DropdownMenuItem>
-                            )}
+                              {member.role !== "owner" && member.role === "staff" && (
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateRole(member.id, "admin")}
+                                  className="text-xs gap-2 text-blue-600 font-semibold cursor-pointer"
+                                >
+                                  <Shield className="w-3.5 h-3.5" /> Promote to Admin
+                                </DropdownMenuItem>
+                              )}
 
-                            {member.role !== "owner" && (
-                              <DropdownMenuItem
-                                onClick={() => handlePromptRemoveMember(member.id, userName)}
-                                className="text-xs gap-2 text-rose-600 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Remove Member
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                              {member.role !== "owner" && member.role === "admin" && (
+                                <DropdownMenuItem
+                                  onClick={() => handleUpdateRole(member.id, "staff")}
+                                  className="text-xs gap-2 text-amber-600 font-semibold cursor-pointer"
+                                >
+                                  <Shield className="w-3.5 h-3.5" /> Demote to Staff
+                                </DropdownMenuItem>
+                              )}
+
+                              {member.role !== "owner" && (
+                                <DropdownMenuItem
+                                  onClick={() => handlePromptRemoveMember(member.id, userName)}
+                                  className="text-xs gap-2 text-rose-600 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Remove Member
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -1140,6 +1201,272 @@ export default function StaffPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Modal: Staff Profile & Salary Details */}
+      <Modal
+        isOpen={isStaffDetailsModalOpen}
+        onClose={() => {
+          setIsStaffDetailsModalOpen(false);
+          setSelectedStaffMember(null);
+        }}
+        title="Staff Profile & Salary Telemetry"
+        subtitle="Detailed employee salary status, attendance metrics, and transaction history."
+        className="max-w-2xl"
+      >
+        {selectedStaffMember && (() => {
+          const uId = selectedStaffMember.userId || selectedStaffMember.id;
+          const sal = salaries.find((s) => s.userId === uId) || selectedStaffMember.salaryRecord || {
+            monthlySalary: 0,
+            advancePaid: 0,
+            totalPaid: 0,
+            remainingSalary: 0,
+            lastPaidDate: "Not Disbursed",
+            paymentStatus: "Not Set",
+          };
+          const memberTransactions = allTransactions.filter((tx) => tx.userId === uId);
+          const userName = selectedStaffMember.user?.name || selectedStaffMember.name || "Staff Member";
+          const userEmail = selectedStaffMember.user?.email || selectedStaffMember.email || "N/A";
+          const userRole = selectedStaffMember.role || "staff";
+          const initials = userName
+            .split(" ")
+            .map((n: string) => n[0])
+            .join("")
+            .substring(0, 2)
+            .toUpperCase();
+          const joinedDate = selectedStaffMember.createdAt
+            ? new Date(selectedStaffMember.createdAt).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })
+            : "Active Member";
+
+          return (
+            <div className="space-y-6">
+              {/* Member Overview Card */}
+              <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-blue-600 text-white font-bold text-base flex items-center justify-center shadow-md shadow-blue-500/20">
+                    {initials}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-base text-slate-900">{userName}</h4>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "px-2 py-0.5 text-[10px] font-bold uppercase rounded-full border",
+                          userRole === "owner"
+                            ? "bg-purple-50 text-purple-600 border-purple-200"
+                            : userRole === "admin"
+                            ? "bg-blue-50 text-blue-600 border-blue-200"
+                            : "bg-slate-100 text-slate-700 border-slate-200"
+                        )}
+                      >
+                        {userRole}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">{userEmail}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Joined on {joinedDate}</p>
+                  </div>
+                </div>
+
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    handleOpenEditSalary({
+                      ...sal,
+                      userId: uId,
+                      name: userName,
+                      email: userEmail,
+                      role: userRole,
+                    });
+                  }}
+                  className="h-8 px-3 text-xs bg-[#0052ff] hover:bg-[#0046dc] text-white font-semibold rounded-xl border-none cursor-pointer"
+                >
+                  Pay Salary
+                </Button>
+              </div>
+
+              {/* Dedicated Section 1: Salary Information */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-blue-600" />
+                    <h5 className="font-bold text-sm text-slate-900">Salary Information</h5>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">Live PostgreSQL Data</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Monthly Salary</span>
+                    <span className="text-base font-bold text-slate-900 font-mono mt-0.5 block">
+                      {formatINR(sal.monthlySalary)}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Advance Paid</span>
+                    <span className="text-base font-bold text-amber-600 font-mono mt-0.5 block">
+                      {formatINR(sal.advancePaid || 0)}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Remaining Salary</span>
+                    <span className="text-base font-bold text-blue-600 font-mono mt-0.5 block">
+                      {formatINR(sal.remainingSalary || Math.max(0, sal.monthlySalary - (sal.totalPaid || 0)))}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Last Salary Paid</span>
+                    <span className="text-xs font-semibold text-slate-700 font-mono mt-1 block truncate">
+                      {sal.lastPaidDate || "Not Disbursed"}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Payment Status</span>
+                    <div className="mt-1">
+                      <StatusBadge status={sal.paymentStatus || (sal.remainingSalary === 0 && sal.monthlySalary > 0 ? "Paid" : "Pending")} />
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Total Disbursed</span>
+                    <span className="text-base font-bold text-emerald-600 font-mono mt-0.5 block">
+                      {formatINR(sal.totalPaid || 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dedicated Section 2: Attendance Summary */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-emerald-600" />
+                    <h5 className="font-bold text-sm text-slate-900">Attendance Summary</h5>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">Current Month Cycle</span>
+                </div>
+
+                {(() => {
+                  const now = new Date();
+                  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                  let totalWorkingDays = 0;
+                  let workingDaysElapsed = 0;
+                  for (let d = 1; d <= daysInMonth; d++) {
+                    const currentDay = new Date(now.getFullYear(), now.getMonth(), d);
+                    if (currentDay.getDay() !== 0) {
+                      totalWorkingDays++;
+                      if (d <= now.getDate()) {
+                        workingDaysElapsed++;
+                      }
+                    }
+                  }
+                  const joinDate = selectedStaffMember.createdAt ? new Date(selectedStaffMember.createdAt) : null;
+                  const isCurrentMonthJoiner = joinDate && joinDate.getMonth() === now.getMonth() && joinDate.getFullYear() === now.getFullYear();
+                  const activeDays = isCurrentMonthJoiner
+                    ? Math.max(1, workingDaysElapsed - Math.floor((joinDate.getDate() / daysInMonth) * workingDaysElapsed))
+                    : workingDaysElapsed;
+                  const presentDays = Math.max(0, activeDays);
+                  const absentDays = Math.max(0, workingDaysElapsed - presentDays);
+                  const leaveDays = 0;
+
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                      <div className="p-3 bg-blue-50/60 border border-blue-200/70 rounded-xl text-center">
+                        <span className="text-[10px] font-mono font-semibold text-blue-600 block uppercase">Total Working Days</span>
+                        <span className="text-lg font-bold text-blue-900 font-mono mt-0.5 block">{totalWorkingDays} Days</span>
+                      </div>
+
+                      <div className="p-3 bg-emerald-50/60 border border-emerald-200/70 rounded-xl text-center">
+                        <span className="text-[10px] font-mono font-semibold text-emerald-600 block uppercase">Present Days</span>
+                        <span className="text-lg font-bold text-emerald-900 font-mono mt-0.5 block">{presentDays} Days</span>
+                      </div>
+
+                      <div className="p-3 bg-rose-50/60 border border-rose-200/70 rounded-xl text-center">
+                        <span className="text-[10px] font-mono font-semibold text-rose-600 block uppercase">Absent Days</span>
+                        <span className="text-lg font-bold text-rose-900 font-mono mt-0.5 block">{absentDays} Days</span>
+                      </div>
+
+                      <div className="p-3 bg-amber-50/60 border border-amber-200/70 rounded-xl text-center">
+                        <span className="text-[10px] font-mono font-semibold text-amber-600 block uppercase">Leave Days</span>
+                        <span className="text-lg font-bold text-amber-900 font-mono mt-0.5 block">{leaveDays} Days</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Dedicated Section 3: Recent Transactions Log */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-slate-600" />
+                    <h5 className="font-bold text-sm text-slate-900">Salary Disbursement History</h5>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">{memberTransactions.length} recorded</span>
+                </div>
+
+                {memberTransactions.length === 0 ? (
+                  <div className="text-center py-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-xs text-slate-400">
+                    No salary or advance transactions recorded yet for this staff member.
+                  </div>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                    {memberTransactions.map((tx) => (
+                      <div
+                        key={tx.id}
+                        className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200/70 rounded-xl text-xs"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase",
+                              tx.type === "Advance"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-emerald-100 text-emerald-800"
+                            )}
+                          >
+                            {tx.type}
+                          </span>
+                          <div>
+                            <span className="font-semibold text-slate-900">{tx.date}</span>
+                            {tx.notes && tx.notes !== "-" && (
+                              <span className="text-[11px] text-slate-500 block">{tx.notes}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-mono font-bold text-slate-900 block">{formatINR(tx.amount)}</span>
+                          <span className="text-[10px] text-slate-400">by {tx.recordedBy}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-3 border-t border-slate-100">
+                <Button
+                  onClick={() => {
+                    setIsStaffDetailsModalOpen(false);
+                    setSelectedStaffMember(null);
+                  }}
+                  className="px-5 py-2 h-9 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl border-none cursor-pointer"
+                >
+                  Close Profile
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 }
+

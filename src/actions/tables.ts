@@ -10,18 +10,20 @@ import { db } from "@/lib/db";
 import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 import type { TableStatus } from "@prisma/client";
 
+import { trimmedString } from "@/lib/validation";
+
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
 
 const tableSchema = z.object({
-  tableNumber: z.string().min(1, "Table number is required"),
-  capacity: z.coerce.number().int().positive("Capacity must be a positive integer"),
+  tableNumber: trimmedString(1, 30, "Table number"),
+  capacity: z.coerce.number().int("Capacity must be an integer").min(1, "Capacity must be at least 1 guest").max(50, "Capacity cannot exceed 50 guests"),
 });
 
 const updateTableSchema = z.object({
-  tableNumber: z.string().min(1, "Table number cannot be empty").optional(),
-  capacity: z.coerce.number().int().positive("Capacity must be a positive integer").optional(),
+  tableNumber: trimmedString(1, 30, "Table number").optional(),
+  capacity: z.coerce.number().int("Capacity must be an integer").min(1, "Capacity must be at least 1 guest").max(50, "Capacity cannot exceed 50 guests").optional(),
 });
 
 // ---------------------------------------------------------------------------

@@ -43,8 +43,13 @@ export default function KitchenDisplayPage() {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  // Load active kitchen orders
+  const isFetchingRef = React.useRef(false);
+
+  // Load live cooking orders from database
   const loadKitchenQueue = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const activeOrders = await listLiveOrders();
@@ -53,6 +58,7 @@ export default function KitchenDisplayPage() {
       console.error("Error loading kitchen orders:", err);
       if (!silent) toast.error(err.message || "Failed to load kitchen queue");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -60,7 +66,7 @@ export default function KitchenDisplayPage() {
   useEffect(() => {
     loadKitchenQueue();
 
-    // 5-second polling interval for real-time kitchen updates
+    // 5-second polling interval for real-time kitchen updates with visibility guard
     const interval = setInterval(() => {
       loadKitchenQueue(true);
     }, 5000);

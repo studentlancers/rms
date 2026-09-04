@@ -12,15 +12,17 @@ import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 export type ExpenseType = "GENERAL" | "INVENTORY";
 export type ExpenseStatus = "PAID" | "PENDING" | "CANCELLED";
 
+import { trimmedString, optionalTrimmedString, positiveMoneySchema } from "@/lib/validation";
+
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
 
 const createExpenseSchema = z.object({
-  name: z.string().min(1, "Expense name is required"),
-  description: z.string().optional(),
-  staffUserId: z.string().optional(),
-  amount: z.coerce.number().positive("Amount must be a positive number"),
+  name: trimmedString(1, 120, "Expense name"),
+  description: optionalTrimmedString(300, "Description"),
+  staffUserId: optionalTrimmedString(100, "Staff user ID"),
+  amount: positiveMoneySchema("Amount", 10_000_000),
   purchaseDate: z.coerce.date().optional(),
   status: z.enum(["PAID", "PENDING", "CANCELLED"]).default("PAID"),
 });

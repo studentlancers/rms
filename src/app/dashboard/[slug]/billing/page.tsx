@@ -94,8 +94,13 @@ export default function BillingModulePage() {
     await loadChargeDefaults();
   };
 
+  const isFetchingRef = React.useRef(false);
+
   // Load orders, menu items, and tables from database
   const loadBillingData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const [fetchedOrders, fetchedItems, fetchedTables] = await Promise.allSettled([
@@ -119,6 +124,7 @@ export default function BillingModulePage() {
       console.error("Error loading owner billing data:", err);
       if (!silent) toast.error(err.message || "Failed to load billing history");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -126,10 +132,10 @@ export default function BillingModulePage() {
   useEffect(() => {
     loadBillingData();
 
-    // 5-second polling synchronization
+    // 15-second polling synchronization with tab visibility guard
     const interval = setInterval(() => {
       loadBillingData(true);
-    }, 5000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, []);
@@ -276,9 +282,18 @@ export default function BillingModulePage() {
       return;
     }
 
-    const pkg = Math.max(0, parseFloat(packagingCharge) || 0);
-    const svc = Math.max(0, parseFloat(serviceCharge) || 0);
-    const splt = Math.max(0, parseFloat(splittingCharge) || 0);
+    const cleanPhone = customerPhone.trim();
+    if (cleanPhone) {
+      const phoneDigits = cleanPhone.replace(/[\s-]/g, "");
+      if (!/^(?:(?:\+91|0)?[6-9]\d{9})$/.test(phoneDigits) && !/^[+0-9\s-]{7,15}$/.test(cleanPhone)) {
+        toast.error("Please enter a valid phone number (e.g. 9876543210).");
+        return;
+      }
+    }
+
+    const pkg = Math.max(0, Math.min(5000, parseFloat(packagingCharge) || 0));
+    const svc = Math.max(0, Math.min(10000, parseFloat(serviceCharge) || 0));
+    const splt = Math.max(0, Math.min(5000, parseFloat(splittingCharge) || 0));
 
     setIsSubmitting(true);
     try {
@@ -286,7 +301,7 @@ export default function BillingModulePage() {
         orderType: selectedTableId ? "DINE_IN" : "TAKEAWAY",
         tableId: selectedTableId || undefined,
         customerName: customerName.trim() || undefined,
-        customerPhone: customerPhone.trim() || undefined,
+        customerPhone: cleanPhone || undefined,
         packagingCharge: pkg,
         serviceCharge: svc,
         splittingCharge: splt,

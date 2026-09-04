@@ -14,29 +14,35 @@ import { convertQuantity } from "@/lib/unit-conversion";
 // Schema
 // ---------------------------------------------------------------------------
 
+import { trimmedString, optionalTrimmedString, positiveMoneySchema, positiveQuantitySchema } from "@/lib/validation";
+
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
+
 const categorySchema = z.object({
-  name: z.string().min(1, "Category name is required"),
-  sortOrder: z.coerce.number().int().default(0),
+  name: trimmedString(1, 80, "Category name"),
+  sortOrder: z.coerce.number().int().min(0, "Sort order cannot be negative").max(999, "Sort order too large").default(0),
 });
 
 const recipeIngredientSchema = z.object({
-  inventoryItemId: z.string().min(1, "Inventory item ID is required"),
-  quantityRequired: z.coerce.number().positive("Quantity required must be positive"),
-  unit: z.string().optional(),
+  inventoryItemId: trimmedString(1, 100, "Inventory item ID"),
+  quantityRequired: positiveQuantitySchema("Quantity required", 10_000),
+  unit: optionalTrimmedString(20, "Unit"),
 });
 
 const menuItemSchema = z.object({
-  categoryId: z.string().min(1),
-  name: z.string().min(1, "Item name is required"),
-  description: z.string().optional(),
-  price: z.coerce.number().positive("Price must be a positive number"),
+  categoryId: trimmedString(1, 100, "Category ID"),
+  name: trimmedString(1, 120, "Item name"),
+  description: optionalTrimmedString(500, "Description"),
+  price: positiveMoneySchema("Price", 100_000),
   isVeg: z.coerce.boolean().default(false),
   isAvailable: z.coerce.boolean().default(true),
   variants: z
     .array(
       z.object({
-        name: z.string(),
-        priceModifier: z.number(),
+        name: trimmedString(1, 80, "Variant name"),
+        priceModifier: z.coerce.number().finite("Price modifier must be a valid number"),
       })
     )
     .optional(),

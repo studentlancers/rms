@@ -75,34 +75,36 @@ export default function StaffInventoryPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  const isFetchingRef = React.useRef(false);
+
   // Load Inventory Data from Server Actions
   const loadData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
-      const [items, currentStats] = await Promise.all([
+      const [items, currentStats, daily, monthly] = await Promise.all([
         listInventoryItems(),
         getInventoryStats(),
+        getDailyInventoryLedger(selectedDate),
+        getMonthlyInventoryLedger(selectedYear, selectedMonth),
       ]);
 
       setInventoryItems(items || []);
       setStats(currentStats);
+      setDailyData(daily);
+      setMonthlyData(monthly);
 
       if (items && items.length > 0) {
         const dbCategories = Array.from(new Set(items.map((i: any) => i.category)));
         setCategories((prev) => Array.from(new Set([...prev, ...dbCategories])));
       }
-
-      // Load Daily Data
-      const daily = await getDailyInventoryLedger(selectedDate);
-      setDailyData(daily);
-
-      // Load Monthly Data
-      const monthly = await getMonthlyInventoryLedger(selectedYear, selectedMonth);
-      setMonthlyData(monthly);
     } catch (err: any) {
       console.error("Error loading staff inventory:", err);
       if (!silent) toast.error("Failed to load inventory telemetry");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -110,9 +112,10 @@ export default function StaffInventoryPage() {
   useEffect(() => {
     loadData();
 
+    // 20-second polling interval with visibility guard for inventory telemetry
     const interval = setInterval(() => {
       loadData(true);
-    }, 5000);
+    }, 20000);
 
     return () => clearInterval(interval);
   }, [selectedDate, selectedYear, selectedMonth]);

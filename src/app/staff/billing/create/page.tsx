@@ -148,9 +148,11 @@ export default function CreateInvoicePage() {
   // Validation
   const validateForm = (): boolean => {
     const errs: string[] = [];
-    if (!guestName.trim()) {
-      errs.push("Customer / Guest Name is required.");
+    const cleanGuest = guestName.trim();
+    if (!cleanGuest || cleanGuest.length < 2) {
+      errs.push("Customer / Guest Name is required (at least 2 characters).");
     }
+
     if (rows.length === 0) {
       errs.push("At least one invoice line item is required.");
     }
@@ -158,13 +160,20 @@ export default function CreateInvoicePage() {
       if (!r.description.trim()) {
         errs.push(`Line #${idx + 1} Description cannot be empty.`);
       }
-      if (!r.quantity || r.quantity <= 0) {
-        errs.push(`Line #${idx + 1} Quantity must be greater than 0.`);
+      const q = Number(r.quantity);
+      if (isNaN(q) || q <= 0 || q > 1000) {
+        errs.push(`Line #${idx + 1} Quantity must be between 1 and 1000.`);
       }
-      if (r.unitPrice < 0) {
-        errs.push(`Line #${idx + 1} Unit Price cannot be negative.`);
+      const p = Number(r.unitPrice);
+      if (isNaN(p) || p < 0 || p > 100000) {
+        errs.push(`Line #${idx + 1} Unit Price must be between ₹0 and ₹100,000.`);
       }
     });
+
+    const paid = typeof paidAmount === "number" ? paidAmount : parseFloat(paidAmount || "0") || 0;
+    if (isNaN(paid) || paid < 0 || paid > 10_000_000) {
+      errs.push("Paid Amount must be a valid non-negative number up to ₹10,000,000.");
+    }
 
     setValidationErrors(errs);
     if (errs.length > 0) {

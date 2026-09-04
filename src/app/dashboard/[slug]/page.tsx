@@ -20,8 +20,13 @@ export default function OverviewPage() {
   const [weeklySales, setWeeklySales] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const isFetchingRef = React.useRef(false);
+
   // Fetch 7-day sales telemetry for overview chart and stat cards
   const loadOverviewAnalytics = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const now = new Date();
@@ -34,6 +39,7 @@ export default function OverviewPage() {
     } catch (err: any) {
       console.error("Error loading overview analytics:", err);
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -41,10 +47,10 @@ export default function OverviewPage() {
   useEffect(() => {
     loadOverviewAnalytics();
 
-    // 5-second polling for live dashboard synchronization
+    // 20-second polling for live dashboard synchronization with visibility guard
     const interval = setInterval(() => {
       loadOverviewAnalytics(true);
-    }, 5000);
+    }, 20000);
 
     return () => clearInterval(interval);
   }, []);

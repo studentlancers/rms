@@ -96,6 +96,7 @@ export default function MenuModulePage() {
   const [menuName, setMenuName] = useState("");
   const [menuCategory, setMenuCategory] = useState("");
   const [menuPrice, setMenuPrice] = useState("");
+  const [menuHalfPrice, setMenuHalfPrice] = useState("");
   const [menuGst, setMenuGst] = useState("5");
   const [menuDesc, setMenuDesc] = useState("");
   const [menuIsVeg, setMenuIsVeg] = useState(false);
@@ -244,6 +245,18 @@ export default function MenuModulePage() {
     setMenuName(item.name);
     setMenuCategory(item.categoryId);
     setMenuPrice(item.price.toString());
+    
+    // Extract Half price if present in variants
+    const halfVar = Array.isArray(item.variants)
+      ? item.variants.find((v: any) => v.name?.toLowerCase() === "half")
+      : null;
+    if (halfVar) {
+      const halfActualPrice = item.price + (halfVar.priceModifier || 0);
+      setMenuHalfPrice(halfActualPrice > 0 ? halfActualPrice.toString() : "");
+    } else {
+      setMenuHalfPrice("");
+    }
+
     setMenuDesc(item.description || "");
     setMenuIsVeg(item.isVeg || false);
     setMenuAvailable(item.isAvailable);
@@ -272,6 +285,7 @@ export default function MenuModulePage() {
       setMenuCategory(categories[0].id);
     }
     setMenuPrice("");
+    setMenuHalfPrice("");
     setMenuDesc("");
     setMenuIsVeg(false);
     setMenuAvailable(true);
@@ -283,7 +297,8 @@ export default function MenuModulePage() {
   // Save Menu Item Handler (Create & Update)
   const handleSaveMenuItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!menuName.trim()) {
+    const cleanName = menuName.trim();
+    if (!cleanName) {
       toast.error("Dish name is required");
       return;
     }
@@ -291,9 +306,20 @@ export default function MenuModulePage() {
       toast.error("Please select or create a category first");
       return;
     }
-    if (!menuPrice || parseFloat(menuPrice) <= 0) {
-      toast.error("Please enter a valid price");
+    const numPrice = parseFloat(menuPrice);
+    if (isNaN(numPrice) || numPrice <= 0 || numPrice > 100000) {
+      toast.error("Please enter a valid price between ₹0.01 and ₹100,000");
       return;
+    }
+
+    let parsedHalfPrice: number | null = null;
+    if (menuHalfPrice.trim()) {
+      const numHalf = parseFloat(menuHalfPrice);
+      if (isNaN(numHalf) || numHalf <= 0 || numHalf > 100000) {
+        toast.error("Please enter a valid half price between ₹0.01 and ₹100,000");
+        return;
+      }
+      parsedHalfPrice = numHalf;
     }
 
     // Validate recipe ingredients
@@ -302,15 +328,24 @@ export default function MenuModulePage() {
         toast.error("Please select an inventory item for all recipe rows");
         return;
       }
-      if (ing.quantityRequired <= 0) {
-        toast.error("Required quantity must be greater than 0");
+      if (isNaN(ing.quantityRequired) || ing.quantityRequired <= 0) {
+        toast.error("Required ingredient quantity must be greater than 0");
         return;
       }
     }
 
     setIsSubmitting(true);
     try {
-      const specialVariants = menuIsSpecial ? [{ name: "special", priceModifier: 0 }] : undefined;
+      const variantsList: Array<{ name: string; priceModifier: number }> = [];
+      if (parsedHalfPrice !== null) {
+        variantsList.push({
+          name: "Half",
+          priceModifier: parsedHalfPrice - numPrice,
+        });
+      }
+      if (menuIsSpecial) {
+        variantsList.push({ name: "special", priceModifier: 0 });
+      }
 
       if (editingMenuItem) {
         await updateMenuItem(editingMenuItem.id, {
@@ -320,7 +355,7 @@ export default function MenuModulePage() {
           description: menuDesc.trim() || undefined,
           isVeg: menuIsVeg,
           isAvailable: menuAvailable,
-          variants: specialVariants ?? [],
+          variants: variantsList,
           recipe: recipeIngredients,
         });
         toast.success("Menu item updated successfully");
@@ -332,8 +367,8 @@ export default function MenuModulePage() {
         formData.append("description", menuDesc.trim());
         formData.append("isVeg", String(menuIsVeg));
         formData.append("isAvailable", String(menuAvailable));
-        if (specialVariants) {
-          formData.append("variants", JSON.stringify(specialVariants));
+        if (variantsList.length > 0) {
+          formData.append("variants", JSON.stringify(variantsList));
         }
         if (recipeIngredients.length > 0) {
           formData.append("recipe", JSON.stringify(recipeIngredients));
@@ -901,7 +936,7 @@ export default function MenuModulePage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Category *
@@ -927,7 +962,7 @@ export default function MenuModulePage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Price (₹) *
+                Full Price (₹) *
               </label>
               <Input
                 type="number"
@@ -936,6 +971,20 @@ export default function MenuModulePage() {
                 value={menuPrice}
                 onChange={(e) => setMenuPrice(e.target.value)}
                 placeholder="290.00"
+                className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Half Price (₹) <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <Input
+                type="number"
+                step="0.01"
+                value={menuHalfPrice}
+                onChange={(e) => setMenuHalfPrice(e.target.value)}
+                placeholder="160.00"
                 className="w-full px-3 py-2 h-10 text-xs rounded-xl font-mono"
               />
             </div>

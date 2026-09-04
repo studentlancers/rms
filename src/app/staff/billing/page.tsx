@@ -248,9 +248,18 @@ export default function StaffBillingPage() {
       return;
     }
 
-    const pkg = Math.max(0, parseFloat(packagingCharge) || 0);
-    const svc = Math.max(0, parseFloat(serviceCharge) || 0);
-    const splt = Math.max(0, parseFloat(splittingCharge) || 0);
+    const cleanPhone = customerPhone.trim();
+    if (cleanPhone) {
+      const phoneDigits = cleanPhone.replace(/[\s-]/g, "");
+      if (!/^(?:(?:\+91|0)?[6-9]\d{9})$/.test(phoneDigits) && !/^[+0-9\s-]{7,15}$/.test(cleanPhone)) {
+        toast.error("Please enter a valid phone number (e.g. 9876543210).");
+        return;
+      }
+    }
+
+    const pkg = Math.max(0, Math.min(5000, parseFloat(packagingCharge) || 0));
+    const svc = Math.max(0, Math.min(10000, parseFloat(serviceCharge) || 0));
+    const splt = Math.max(0, Math.min(5000, parseFloat(splittingCharge) || 0));
 
     setIsSubmitting(true);
     try {
@@ -258,7 +267,7 @@ export default function StaffBillingPage() {
         orderType: selectedTableId ? "DINE_IN" : "TAKEAWAY",
         tableId: selectedTableId || undefined,
         customerName: customerName.trim() || undefined,
-        customerPhone: customerPhone.trim() || undefined,
+        customerPhone: cleanPhone || undefined,
         packagingCharge: pkg,
         serviceCharge: svc,
         splittingCharge: splt,

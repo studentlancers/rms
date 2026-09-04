@@ -12,20 +12,21 @@ import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 import { headers } from "next/headers";
 
 import { sendStaffInvitationEmail } from "@/lib/email";
+import { trimmedString, emailSchema, passwordSchema } from "@/lib/validation";
 
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
 const inviteSchema = z.object({
-  email: z.string().email("Invalid email address"),
+  email: emailSchema,
   role: z.enum(["admin", "staff"]),
 });
 
 const createStaffSchema = z.object({
-  name: z.string().min(1, "Full name is required"),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: trimmedString(2, 100, "Full name"),
+  email: emailSchema,
+  password: passwordSchema,
   role: z.enum(["admin", "staff"]).default("staff"),
 });
 

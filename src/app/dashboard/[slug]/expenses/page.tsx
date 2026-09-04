@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { Modal } from "@/components/ui/modal";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -75,62 +75,101 @@ export default function ExpensesPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Load Staff List
+  const isMountedRef = useRef(true);
+  const isFetchingRef = useRef(false);
+
+  // Load Staff List on mount with unmount guard
   useEffect(() => {
+    isMountedRef.current = true;
+    let isSubscribed = true;
+
     async function loadStaff() {
       try {
         const staff = await getRestaurantStaff();
-        setStaffList(staff);
+        if (isSubscribed && isMountedRef.current) {
+          setStaffList(staff);
+        }
       } catch (err) {
-        console.error("Failed to load staff members:", err);
+        if (isSubscribed) {
+          console.error("Failed to load staff members:", err);
+        }
       }
     }
     loadStaff();
+
+    return () => {
+      isSubscribed = false;
+      isMountedRef.current = false;
+    };
   }, []);
 
   // Load Expenses Data from Server Actions
-  const loadData = async (query = searchQuery, silent = false) => {
+  const loadData = useCallback(async (query = "", silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (!isMountedRef.current) return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     try {
-      if (!silent) setIsLoading(true);
+      if (!silent && isMountedRef.current) setIsLoading(true);
       const [items, currentStats] = await Promise.all([
         listExpenses(query),
         getExpenseStats(),
       ]);
 
-      setExpenses(items);
-      setStats(currentStats);
+      if (isMountedRef.current) {
+        setExpenses(items);
+        setStats(currentStats);
+      }
     } catch (err: unknown) {
       console.error("Error loading expenses data:", err);
-      if (!silent) {
+      if (!silent && isMountedRef.current) {
         toast.error("Failed to load expense records");
       }
     } finally {
-      if (!silent) setIsLoading(false);
+      isFetchingRef.current = false;
+      if (!silent && isMountedRef.current) setIsLoading(false);
     }
-  };
+  }, []);
 
+  // Polling interval with explicit cleanup and tab visibility listener
   useEffect(() => {
-    loadData(searchQuery);
+    // Initial data fetch on mount
+    loadData("", false);
 
-    // 5-second polling interval for live expense synchronization
+    // 30-second polling interval for expense synchronization
     const interval = setInterval(() => {
-      loadData(searchQuery, true);
-    }, 5000);
+      if (isMountedRef.current) {
+        loadData("", true);
+      }
+    }, 30000);
 
-    return () => clearInterval(interval);
-  }, [searchQuery]);
+    // Visibility listener: pause when hidden, refresh safely when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && isMountedRef.current) {
+        loadData("", true);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [loadData]);
 
   const handleCreateExpense = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name.trim()) {
+    const cleanName = name.trim();
+    if (!cleanName) {
       toast.error("Please provide an expense name");
       return;
     }
 
     const numericCost = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
-    if (numericCost <= 0) {
-      toast.error("Please enter a valid expense cost");
+    if (isNaN(numericCost) || numericCost <= 0 || numericCost > 10_000_000) {
+      toast.error("Please enter a valid expense amount between ₹0.01 and ₹10,000,000");
       return;
     }
 

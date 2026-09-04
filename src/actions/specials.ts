@@ -9,21 +9,23 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 
+import { trimmedString, optionalTrimmedString, positiveMoneySchema } from "@/lib/validation";
+
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
 
 const createDailySpecialSchema = z
   .object({
-    name: z.string().min(1, "Dish name is required"),
-    category: z.string().min(1, "Category is required"),
-    regularPrice: z.coerce.number().positive("Regular price must be positive"),
-    todayPrice: z.coerce.number().positive("Today's price must be positive"),
-    availableQty: z.string().default("Available"),
-    chefRecommendation: z.string().default("Must Try ⭐"),
-    description: z.string().min(1, "Description is required"),
-    menuItemId: z.string().optional(),
-    discount: z.string().optional(),
+    name: trimmedString(1, 120, "Dish name"),
+    category: trimmedString(1, 80, "Category"),
+    regularPrice: positiveMoneySchema("Regular price", 100_000),
+    todayPrice: positiveMoneySchema("Today's price", 100_000),
+    availableQty: optionalTrimmedString(50, "Available quantity").default("Available"),
+    chefRecommendation: optionalTrimmedString(100, "Chef recommendation").default("Must Try ⭐"),
+    description: trimmedString(1, 500, "Description"),
+    menuItemId: optionalTrimmedString(100, "Menu item ID"),
+    discount: optionalTrimmedString(50, "Discount"),
   })
   .refine((data) => data.todayPrice <= data.regularPrice, {
     message: "Today's price cannot exceed regular price",

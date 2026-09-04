@@ -40,12 +40,31 @@ export default function CreateRestaurantPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+
+    const cleanName = name.trim();
+    const cleanSlug = slug.trim().toLowerCase();
+
+    if (!cleanName || cleanName.length < 2) {
+      setError("Restaurant name must be at least 2 characters long.");
+      return;
+    }
+
+    if (!cleanSlug || cleanSlug.length < 2) {
+      setError("Restaurant slug must be at least 2 characters long.");
+      return;
+    }
+
+    if (!/^[a-z0-9-]+$/.test(cleanSlug)) {
+      setError("Slug must contain only lowercase letters, numbers, and hyphens.");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const formData = new FormData();
-      formData.append("name", name);
-      formData.append("slug", slug);
+      formData.append("name", cleanName);
+      formData.append("slug", cleanSlug);
 
       await createRestaurant(formData);
     } catch (err: unknown) {

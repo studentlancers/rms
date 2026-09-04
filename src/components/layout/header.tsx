@@ -101,7 +101,7 @@ export default function Header({
 
   useEffect(() => {
     loadNotificationsData();
-    const interval = setInterval(loadNotificationsData, 10000);
+    const interval = setInterval(loadNotificationsData, 20000);
     return () => clearInterval(interval);
   }, []);
 

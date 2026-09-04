@@ -93,13 +93,17 @@ export default function DeliveryOrdersPage() {
     }
   };
 
+  const isFetchingRef = React.useRef(false);
+
   useEffect(() => {
     loadDeliveryData();
 
-    // 5-second polling interval for dispatch telemetry
+    // 8-second polling interval with visibility guard for dispatch telemetry
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (isFetchingRef.current) return;
       loadDeliveryData(true);
-    }, 5000);
+    }, 8000);
 
     return () => clearInterval(interval);
   }, []);

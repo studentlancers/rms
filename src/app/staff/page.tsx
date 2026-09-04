@@ -37,8 +37,13 @@ export default function StaffDashboardPage() {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
+  const isFetchingRef = React.useRef(false);
+
   // Fetch telemetry from PostgreSQL database
   const loadStaffDashboardData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const [fetchedOrders, fetchedTables] = await Promise.all([
@@ -52,6 +57,7 @@ export default function StaffDashboardPage() {
       console.error("Error loading staff dashboard telemetry:", err);
       if (!silent) toast.error(err.message || "Failed to load staff telemetry");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -59,10 +65,10 @@ export default function StaffDashboardPage() {
   useEffect(() => {
     loadStaffDashboardData();
 
-    // 5-second polling interval matching existing staff modules
+    // 8-second polling interval with visibility guard
     const interval = setInterval(() => {
       loadStaffDashboardData(true);
-    }, 5000);
+    }, 8000);
 
     return () => clearInterval(interval);
   }, []);

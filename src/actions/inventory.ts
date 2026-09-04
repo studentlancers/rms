@@ -10,28 +10,30 @@ import { db } from "@/lib/db";
 import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 import type { MovementType } from "@prisma/client";
 
+import { trimmedString, optionalTrimmedString, quantitySchema, moneySchema } from "@/lib/validation";
+
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
 
 const createInventoryItemSchema = z.object({
-  name: z.string().min(1, "Item name is required"),
-  category: z.string().min(1, "Category is required"),
-  quantity: z.coerce.number().min(0, "Quantity cannot be negative").default(0),
-  unit: z.string().min(1, "Unit is required").default("unit"),
-  unitCost: z.coerce.number().min(0, "Unit cost cannot be negative").default(0),
-  minReorderLevel: z.coerce.number().min(0).default(10),
+  name: trimmedString(1, 120, "Item name"),
+  category: trimmedString(1, 80, "Category"),
+  quantity: quantitySchema("Quantity", 1_000_000).default(0),
+  unit: trimmedString(1, 30, "Unit").default("unit"),
+  unitCost: moneySchema("Unit cost", 500_000).default(0),
+  minReorderLevel: quantitySchema("Reorder level", 100_000).default(10),
   inventoryType: z.enum(["DAILY", "MONTHLY"]).default("DAILY"),
-  supplierId: z.string().optional(),
+  supplierId: optionalTrimmedString(100, "Supplier ID"),
 });
 
 const updateInventoryItemSchema = createInventoryItemSchema.partial();
 
 const adjustStockSchema = z.object({
-  inventoryItemId: z.string().min(1, "Inventory Item ID is required"),
-  newQuantity: z.coerce.number().min(0, "Quantity cannot be negative"),
+  inventoryItemId: trimmedString(1, 100, "Inventory Item ID"),
+  newQuantity: quantitySchema("Quantity", 1_000_000),
   type: z.enum(["OPENING_STOCK", "PURCHASE", "USAGE", "ADJUSTMENT", "WASTAGE"]).default("ADJUSTMENT"),
-  reason: z.string().optional(),
+  reason: optionalTrimmedString(250, "Reason"),
 });
 
 // ---------------------------------------------------------------------------
@@ -453,11 +455,52 @@ export async function getDailyInventoryLedger(targetDateStr?: string) {
   const dayStart = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0));
   const dayEnd = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999));
 
-  const inventoryItems = await db.inventoryItem.findMany({
-    where: { restaurantId },
-    orderBy: { name: "asc" },
-    include: { supplier: true },
-  });
+  // Batch query items, today's logs, and today's movements in 1 round-trip
+  const [inventoryItems, existingLogs, dayMovements] = await Promise.all([
+    db.inventoryItem.findMany({
+      where: { restaurantId },
+      orderBy: { name: "asc" },
+      include: { supplier: true },
+    }),
+    db.dailyInventoryLog.findMany({
+      where: { restaurantId, date: dayStart },
+    }),
+    db.stockMovement.findMany({
+      where: {
+        restaurantId,
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+    }),
+  ]);
+
+  const logByItem = new Map(existingLogs.map((l) => [l.inventoryItemId, l]));
+
+  // Index movements by inventoryItemId
+  const movementsByItem = new Map<string, typeof dayMovements>();
+  for (const m of dayMovements) {
+    const list = movementsByItem.get(m.inventoryItemId) || [];
+    list.push(m);
+    movementsByItem.set(m.inventoryItemId, list);
+  }
+
+  // Find missing items that have no log today to resolve previous day's closing stock
+  const missingItems = inventoryItems.filter((item) => !logByItem.has(item.id));
+  const prevLogsByItem = new Map<string, any>();
+  if (missingItems.length > 0) {
+    const prevLogs = await db.dailyInventoryLog.findMany({
+      where: {
+        restaurantId,
+        inventoryItemId: { in: missingItems.map((i) => i.id) },
+        date: { lt: dayStart },
+      },
+      orderBy: { date: "desc" },
+    });
+    for (const pl of prevLogs) {
+      if (!prevLogsByItem.has(pl.inventoryItemId)) {
+        prevLogsByItem.set(pl.inventoryItemId, pl);
+      }
+    }
+  }
 
   const logs: Array<{
     inventoryItemId: string;
@@ -483,60 +526,23 @@ export async function getDailyInventoryLedger(targetDateStr?: string) {
   let totalClosing = 0;
 
   for (const item of inventoryItems) {
-    let log = await db.dailyInventoryLog.findFirst({
-      where: { restaurantId, inventoryItemId: item.id, date: dayStart },
-    });
-
+    const log = logByItem.get(item.id);
     let openingStock = 0;
 
     if (log) {
       openingStock = log.openingStock;
     } else {
-      // Auto-Opening: Find previous day's closed log closingStock
-      const prevLog = await db.dailyInventoryLog.findFirst({
-        where: {
-          restaurantId,
-          inventoryItemId: item.id,
-          date: { lt: dayStart },
-        },
-        orderBy: { date: "desc" },
-      });
-
+      const prevLog = prevLogsByItem.get(item.id);
       openingStock = prevLog ? prevLog.closingStock : item.quantity;
-
-      try {
-        log = await db.dailyInventoryLog.create({
-          data: {
-            restaurantId,
-            inventoryItemId: item.id,
-            date: dayStart,
-            openingStock,
-            closingStock: openingStock,
-            isClosed: false,
-          },
-        });
-      } catch {
-        log = await db.dailyInventoryLog.findFirst({
-          where: { restaurantId, inventoryItemId: item.id, date: dayStart },
-        });
-      }
     }
 
-    // Aggregate movements for the day
-    const dayMovements = await db.stockMovement.findMany({
-      where: {
-        restaurantId,
-        inventoryItemId: item.id,
-        createdAt: { gte: dayStart, lte: dayEnd },
-      },
-    });
-
+    const itemMovements = movementsByItem.get(item.id) || [];
     let dayPurchases = 0;
     let dayUsage = 0;
     let dayWastage = 0;
     let dayAdjustments = 0;
 
-    for (const m of dayMovements) {
+    for (const m of itemMovements) {
       if (m.type === "PURCHASE") {
         dayPurchases += m.quantityChange;
       } else if (m.type === "USAGE") {
@@ -615,7 +621,7 @@ export async function closeDayInventory(data: {
       });
       if (!invItem) continue;
 
-      let log = await tx.dailyInventoryLog.findFirst({
+      const log = await tx.dailyInventoryLog.findFirst({
         where: { restaurantId, inventoryItemId: invItem.id, date: dayStart },
       });
 
@@ -762,10 +768,56 @@ export async function getMonthlyInventoryLedger(year?: number, month?: number) {
   const monthStart = new Date(Date.UTC(targetYear, targetMonth, 1, 0, 0, 0, 0));
   const monthEnd = new Date(Date.UTC(targetYear, targetMonth + 1, 0, 23, 59, 59, 999));
 
-  const inventoryItems = await db.inventoryItem.findMany({
-    where: { restaurantId },
-    orderBy: { name: "asc" },
-  });
+  const [inventoryItems, monthLogs, monthMovements, prevLogs] = await Promise.all([
+    db.inventoryItem.findMany({
+      where: { restaurantId },
+      orderBy: { name: "asc" },
+    }),
+    db.dailyInventoryLog.findMany({
+      where: {
+        restaurantId,
+        date: { gte: monthStart, lte: monthEnd },
+      },
+      orderBy: { date: "asc" },
+    }),
+    db.stockMovement.findMany({
+      where: {
+        restaurantId,
+        createdAt: { gte: monthStart, lte: monthEnd },
+      },
+    }),
+    db.dailyInventoryLog.findMany({
+      where: {
+        restaurantId,
+        date: { lt: monthStart },
+      },
+      orderBy: { date: "desc" },
+    }),
+  ]);
+
+  // Index movements by item
+  const movementsByItem = new Map<string, typeof monthMovements>();
+  for (const m of monthMovements) {
+    const list = movementsByItem.get(m.inventoryItemId) || [];
+    list.push(m);
+    movementsByItem.set(m.inventoryItemId, list);
+  }
+
+  // Index month logs by item
+  const logsByItem = new Map<string, typeof monthLogs>();
+  for (const l of monthLogs) {
+    const list = logsByItem.get(l.inventoryItemId) || [];
+    list.push(l);
+    logsByItem.set(l.inventoryItemId, list);
+  }
+
+  // Index previous logs before monthStart by item
+  const prevLogByItem = new Map<string, any>();
+  for (const pl of prevLogs) {
+    if (!prevLogByItem.has(pl.inventoryItemId)) {
+      prevLogByItem.set(pl.inventoryItemId, pl);
+    }
+  }
 
   const logs: Array<{
     inventoryItemId: string;
@@ -787,23 +839,9 @@ export async function getMonthlyInventoryLedger(year?: number, month?: number) {
   let totalClosing = 0;
 
   for (const item of inventoryItems) {
-    const prevLog = await db.dailyInventoryLog.findFirst({
-      where: {
-        restaurantId,
-        inventoryItemId: item.id,
-        date: { lt: monthStart },
-      },
-      orderBy: { date: "desc" },
-    });
-
-    const firstLogInMonth = await db.dailyInventoryLog.findFirst({
-      where: {
-        restaurantId,
-        inventoryItemId: item.id,
-        date: { gte: monthStart, lte: monthEnd },
-      },
-      orderBy: { date: "asc" },
-    });
+    const prevLog = prevLogByItem.get(item.id);
+    const itemMonthLogs = logsByItem.get(item.id) || [];
+    const firstLogInMonth = itemMonthLogs[0];
 
     const monthOpening = prevLog
       ? prevLog.closingStock
@@ -811,38 +849,24 @@ export async function getMonthlyInventoryLedger(year?: number, month?: number) {
       ? firstLogInMonth.openingStock
       : item.quantity;
 
-    const monthMovements = await db.stockMovement.findMany({
-      where: {
-        restaurantId,
-        inventoryItemId: item.id,
-        createdAt: { gte: monthStart, lte: monthEnd },
-      },
-    });
-
+    const itemMovements = movementsByItem.get(item.id) || [];
     let monthPurchases = 0;
     let monthUsage = 0;
     let monthWastage = 0;
     let monthAdjustments = 0;
 
-    for (const m of monthMovements) {
+    for (const m of itemMovements) {
       if (m.type === "PURCHASE") monthPurchases += m.quantityChange;
       else if (m.type === "USAGE") monthUsage += Math.abs(m.quantityChange);
       else if (m.type === "WASTAGE") monthWastage += Math.abs(m.quantityChange);
       else if (m.type === "ADJUSTMENT") monthAdjustments += m.quantityChange;
     }
 
-    const lastLogInMonth = await db.dailyInventoryLog.findFirst({
-      where: {
-        restaurantId,
-        inventoryItemId: item.id,
-        date: { gte: monthStart, lte: monthEnd },
-        isClosed: true,
-      },
-      orderBy: { date: "desc" },
-    });
+    const closedLogs = itemMonthLogs.filter((l) => l.isClosed);
+    const lastClosedLogInMonth = closedLogs.length > 0 ? closedLogs[closedLogs.length - 1] : null;
 
-    const monthClosing = lastLogInMonth
-      ? lastLogInMonth.closingStock
+    const monthClosing = lastClosedLogInMonth
+      ? lastClosedLogInMonth.closingStock
       : Math.max(0, monthOpening + monthPurchases - monthUsage - monthWastage + monthAdjustments);
 
     totalOpening += monthOpening;

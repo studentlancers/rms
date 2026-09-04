@@ -58,8 +58,13 @@ export default function StaffTablesPage() {
 
   const statusFilters = ["All", "Available", "Occupied", "Reserved"];
 
+  const isFetchingRef = React.useRef(false);
+
   // Fetch Tables from PostgreSQL
   const loadTablesData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const fetchedTables = await listTables();
@@ -68,6 +73,7 @@ export default function StaffTablesPage() {
       console.error("Error loading tables:", err);
       if (!silent) toast.error(err.message || "Failed to load tables");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -75,10 +81,10 @@ export default function StaffTablesPage() {
   useEffect(() => {
     loadTablesData();
 
-    // 5-second polling interval for live floor plan telemetry
+    // 6-second polling interval with visibility guard for live floor plan telemetry
     const interval = setInterval(() => {
       loadTablesData(true);
-    }, 5000);
+    }, 6000);
 
     return () => clearInterval(interval);
   }, []);
@@ -86,23 +92,25 @@ export default function StaffTablesPage() {
   // Handle Add Table Form Submission
   const handleAddTableSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTableNumber.trim()) {
+    const cleanNum = newTableNumber.trim();
+    if (!cleanNum) {
       toast.error("Please enter a table number");
       return;
     }
-    if (!newTableCapacity || parseInt(newTableCapacity, 10) <= 0) {
-      toast.error("Please enter a valid seat capacity");
+    const cap = parseInt(newTableCapacity, 10);
+    if (isNaN(cap) || cap <= 0 || cap > 50) {
+      toast.error("Please enter a valid seat capacity between 1 and 50 guests");
       return;
     }
 
     setIsSubmitting(true);
     try {
       const formData = new FormData();
-      formData.append("tableNumber", newTableNumber.trim());
-      formData.append("capacity", newTableCapacity);
+      formData.append("tableNumber", cleanNum);
+      formData.append("capacity", cap.toString());
 
       await createTable(formData);
-      toast.success(`Table ${newTableNumber.trim()} added successfully!`);
+      toast.success(`Table ${cleanNum} added successfully!`);
 
       setIsAddTableModalOpen(false);
       setNewTableNumber("");

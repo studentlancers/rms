@@ -133,17 +133,26 @@ export default function InventoryPage() {
     }
   };
 
+  const isFetchingRef = React.useRef(false);
+
   // Load Inventory Data from Server Actions
   const loadData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
-      const [items, currentStats] = await Promise.all([
+      const [items, currentStats, daily, monthly] = await Promise.all([
         listInventoryItems(),
         getInventoryStats(),
+        getDailyInventoryLedger(selectedDate),
+        getMonthlyInventoryLedger(selectedYear, selectedMonth),
       ]);
 
       setInventoryItems(items || []);
       setStats(currentStats);
+      setDailyData(daily);
+      setMonthlyData(monthly);
 
       if (items && items.length > 0) {
         const dbCategories = Array.from(new Set(items.map((i: any) => i.category)));
@@ -151,14 +160,6 @@ export default function InventoryPage() {
         if (!adjustItemId) setAdjustItemId(items[0].id);
         if (!wastageItemId) setWastageItemId(items[0].id);
       }
-
-      // Load Daily Data
-      const daily = await getDailyInventoryLedger(selectedDate);
-      setDailyData(daily);
-
-      // Load Monthly Data
-      const monthly = await getMonthlyInventoryLedger(selectedYear, selectedMonth);
-      setMonthlyData(monthly);
 
       // Load Stock History if on History tab
       if (activeTab === "history") {
@@ -168,6 +169,7 @@ export default function InventoryPage() {
       console.error("Error loading inventory:", err);
       if (!silent) toast.error("Failed to load inventory data");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -175,9 +177,8 @@ export default function InventoryPage() {
   useEffect(() => {
     loadData();
     const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       loadData(true);
-    }, 15000);
+    }, 25000);
     return () => clearInterval(interval);
   }, [selectedDate, selectedYear, selectedMonth, activeTab, historyTypeFilter, historyItemFilter]);
 
@@ -194,7 +195,8 @@ export default function InventoryPage() {
 
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemName.trim()) {
+    const cleanName = newItemName.trim();
+    if (!cleanName) {
       toast.error("Please provide an item name");
       return;
     }
@@ -202,11 +204,21 @@ export default function InventoryPage() {
     const qtyVal = parseFloat(newItemOnHand.replace(/[^0-9.]/g, "")) || 0;
     const costVal = parseFloat(newItemUnitCost.replace(/[^0-9.]/g, "")) || 0;
 
+    if (isNaN(qtyVal) || qtyVal < 0 || qtyVal > 1_000_000) {
+      toast.error("Initial stock quantity must be between 0 and 1,000,000");
+      return;
+    }
+
+    if (isNaN(costVal) || costVal < 0 || costVal > 500_000) {
+      toast.error("Unit cost must be between ₹0 and ₹500,000");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await createInventoryItem({
-        name: newItemName.trim(),
-        category: newItemCategory,
+        name: cleanName,
+        category: newItemCategory.trim() || "General",
         quantity: qtyVal,
         unit: newItemUnit || "kg",
         unitCost: costVal,
@@ -214,7 +226,7 @@ export default function InventoryPage() {
         inventoryType: newItemType,
       });
 
-      toast.success(`Inventory item "${newItemName}" created successfully!`);
+      toast.success(`Inventory item "${cleanName}" created successfully!`);
       setIsAddItemOpen(false);
       setNewItemName("");
       setNewItemUnitCost("");

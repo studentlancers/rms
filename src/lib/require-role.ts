@@ -10,6 +10,7 @@
 //   await requireSuperAdmin();                          // throws if caller is not super_admin
 
 import { headers } from "next/headers";
+import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 
@@ -39,25 +40,28 @@ export type AuthContext = RestaurantContext | SuperAdminContext;
 
 /**
  * Resolves the current session. Throws "Not authenticated" if there is none.
+ * Deduplicated per-request lifecycle via React cache().
  */
-async function getSession() {
+export const getSession = cache(async () => {
+  const reqHeaders = await headers();
   const session = await auth.api.getSession({
-    headers: await headers(),
+    headers: reqHeaders,
   });
   if (!session?.user) {
     throw new Error("Not authenticated");
   }
   return session;
-}
+});
 
 /**
  * Returns the full auth context for the calling user:
  * - If the user is a super_admin → SuperAdminContext
  * - Otherwise → RestaurantContext (resolves their active org membership)
  *
+ * Deduplicated per-request lifecycle via React cache().
  * Throws if the user has no active organization membership.
  */
-export async function getRestaurantContext(): Promise<AuthContext> {
+export const getRestaurantContext = cache(async (): Promise<AuthContext> => {
   const session = await getSession();
 
   // Super Admin — platform-wide, not org-scoped.
@@ -65,24 +69,26 @@ export async function getRestaurantContext(): Promise<AuthContext> {
     return { userId: session.user.id, isSuperAdmin: true };
   }
 
+  const reqHeaders = await headers();
+
   // Resolve the active organization membership.
   let member = await auth.api.getActiveMember({
-    headers: await headers(),
+    headers: reqHeaders,
   });
 
   if (!member) {
     try {
       const userOrgs = await auth.api.listOrganizations({
-        headers: await headers(),
+        headers: reqHeaders,
       });
 
       if (userOrgs && userOrgs.length > 0) {
         await auth.api.setActiveOrganization({
           body: { organizationId: userOrgs[0].id },
-          headers: await headers(),
+          headers: reqHeaders,
         });
         member = await auth.api.getActiveMember({
-          headers: await headers(),
+          headers: reqHeaders,
         });
       }
     } catch {
@@ -102,7 +108,7 @@ export async function getRestaurantContext(): Promise<AuthContext> {
     role: member.role as OrgRole,
     isSuperAdmin: false,
   };
-}
+});
 
 /**
  * Ensures the caller has one of the allowed org roles.

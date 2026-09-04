@@ -10,16 +10,15 @@ import { auth } from "@/lib/auth";
 import { requireSuperAdmin } from "@/lib/require-role";
 import { z } from "zod";
 
+import { trimmedString, slugSchema } from "@/lib/validation";
+
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
 const createSchema = z.object({
-  name: z.string().min(2, "Restaurant name must be at least 2 characters"),
-  slug: z
-    .string()
-    .min(2)
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens only"),
+  name: trimmedString(2, 100, "Restaurant name"),
+  slug: slugSchema,
 });
 
 // ---------------------------------------------------------------------------

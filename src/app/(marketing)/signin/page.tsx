@@ -29,20 +29,33 @@ export default function SignInPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (!password || password.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+
     setLoading(true);
 
     if (mode === "signin") {
-      const res = await signIn(email, password, { redirectTo: "/dashboard" });
+      const res = await signIn(cleanEmail, password, { redirectTo: "/dashboard" });
       if (!res.success && res.error) {
         setError(res.error.message || "Unable to sign in.");
       }
     } else {
-      if (!name.trim()) {
-        setError("Please enter your name");
+      const cleanName = name.trim();
+      if (!cleanName || cleanName.length < 2) {
+        setError("Please enter your full name (at least 2 characters).");
         setLoading(false);
         return;
       }
-      const res = await signUp(name, email, password);
+      const res = await signUp(cleanName, cleanEmail, password);
       if (!res.success && res.error) {
         setError(res.error.message || "Unable to create account.");
       }

@@ -8,10 +8,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 
+import { moneySchema } from "@/lib/validation";
+
 const billingSettingsSchema = z.object({
-  defaultPackagingCharge: z.number().min(0, "Packaging charge default must be at least 0"),
-  defaultServiceCharge: z.number().min(0, "Service charge default must be at least 0"),
-  defaultSplittingCharge: z.number().min(0, "Splitting charge default must be at least 0"),
+  defaultPackagingCharge: moneySchema("Packaging charge default", 5000).default(0),
+  defaultServiceCharge: moneySchema("Service charge default", 10000).default(0),
+  defaultSplittingCharge: moneySchema("Splitting charge default", 5000).default(0),
 });
 
 /**

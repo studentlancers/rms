@@ -107,8 +107,9 @@ export default function AcceptInvitationPage({
     setFormError(null);
 
     if (mode === "create") {
-      if (!name.trim()) {
-        setFormError("Please enter your full name");
+      const cleanName = name.trim();
+      if (!cleanName || cleanName.length < 2) {
+        setFormError("Please enter your full name (at least 2 characters)");
         return;
       }
       if (password.length < 8) {

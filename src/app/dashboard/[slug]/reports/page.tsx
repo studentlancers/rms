@@ -42,8 +42,13 @@ export default function ReportsPage() {
     return { from, to };
   };
 
+  const isFetchingRef = React.useRef(false);
+
   // Load analytics telemetry from database
   const loadAnalyticsData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const range = getDateRange(dateFilter);
@@ -62,6 +67,7 @@ export default function ReportsPage() {
       console.error("Error loading sales analytics:", err);
       if (!silent) toast.error(err.message || "Failed to load reporting telemetry");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -69,10 +75,10 @@ export default function ReportsPage() {
   useEffect(() => {
     loadAnalyticsData();
 
-    // 5-second polling interval for live sales synchronization
+    // 30-second polling interval for live sales synchronization with visibility guard
     const interval = setInterval(() => {
       loadAnalyticsData(true);
-    }, 5000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [dateFilter]);

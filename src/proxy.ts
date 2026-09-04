@@ -49,10 +49,31 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Session check for all routes (to allow redirecting authenticated users on public login pages)
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  });
+  // 2. Fast-path Server Actions and internal API endpoints.
+  // Server Actions are secured independently at the function level via `requireRole()`.
+  // Skipping deep DB organization resolution here prevents multi-second query queueing.
+  const isServerAction =
+    request.headers.has("next-action") ||
+    (request.method === "POST" && request.headers.get("accept")?.includes("text/x-component"));
+
+  if (isServerAction) {
+    return NextResponse.next();
+  }
+
+  // Allow API routes through to their own handlers.
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
+  // 3. Session check for all routes (to allow redirecting authenticated users on public login pages)
+  let session = null;
+  try {
+    session = await auth.api.getSession({
+      headers: request.headers,
+    });
+  } catch (err) {
+    console.error("Database connection error in proxy during getSession:", err);
+  }
 
   if (!session?.user) {
     // Unauthenticated user on public route -> allow through
@@ -94,7 +115,7 @@ export async function proxy(request: NextRequest) {
     ]);
 
     if (Array.isArray(orgs)) {
-      userOrgs = orgs as any;
+      userOrgs = orgs as Array<{ id: string; name: string; slug: string; isActive?: boolean }>;
     }
     member = activeMember;
 

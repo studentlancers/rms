@@ -76,8 +76,13 @@ export default function StaffOrdersPage() {
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<string>("");
   const [selectedQty, setSelectedQty] = useState<number>(1);
 
+  const isFetchingRef = React.useRef(false);
+
   // Fetch Orders, Menu Items, and Tables
   const loadOrdersData = async (silent = false) => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (!silent) setIsLoading(true);
       const [ordersRes, menuRes, tablesRes] = await Promise.allSettled([
@@ -97,6 +102,7 @@ export default function StaffOrdersPage() {
       console.error("Error loading orders data:", err);
       if (!silent) toast.error(err.message || "Failed to load orders");
     } finally {
+      isFetchingRef.current = false;
       if (!silent) setIsLoading(false);
     }
   };
@@ -104,10 +110,10 @@ export default function StaffOrdersPage() {
   useEffect(() => {
     loadOrdersData();
 
-    // 5-second polling interval for live synchronization
+    // 6-second polling interval with visibility guard for live POS updates
     const interval = setInterval(() => {
       loadOrdersData(true);
-    }, 5000);
+    }, 6000);
 
     return () => clearInterval(interval);
   }, []);

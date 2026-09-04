@@ -95,13 +95,17 @@ export default function DailySpecialsPage() {
     }
   };
 
+  const isFetchingRef = React.useRef(false);
+
   useEffect(() => {
     loadData(searchQuery, selectedCategory);
 
-    // 5-second polling interval for live specials synchronization
+    // 20-second polling interval with visibility guard for specials synchronization
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (isFetchingRef.current) return;
       loadData(searchQuery, selectedCategory, true);
-    }, 5000);
+    }, 20000);
 
     return () => clearInterval(interval);
   }, [searchQuery, selectedCategory]);

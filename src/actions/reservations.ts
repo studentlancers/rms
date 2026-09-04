@@ -9,17 +9,19 @@ import { db } from "@/lib/db";
 import { requireRole, getActiveRestaurantId } from "@/lib/require-role";
 import type { ReservationStatus } from "@prisma/client";
 
+import { trimmedString, optionalTrimmedString, phoneSchema } from "@/lib/validation";
+
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
 const createReservationSchema = z.object({
-  customerName: z.string().min(1, "Customer name is required"),
-  customerPhone: z.string().min(1, "Phone number is required"),
-  partySize: z.coerce.number().int().positive("Party size must be at least 1"),
+  customerName: trimmedString(1, 100, "Customer name"),
+  customerPhone: phoneSchema.default(""),
+  partySize: z.coerce.number().int("Party size must be an integer").min(1, "Party size must be at least 1").max(50, "Party size cannot exceed 50"),
   reservationTime: z.coerce.date(),
-  tableId: z.string().optional(),
-  notes: z.string().optional(),
+  tableId: optionalTrimmedString(100, "Table ID"),
+  notes: optionalTrimmedString(300, "Notes"),
 });
 
 // ---------------------------------------------------------------------------

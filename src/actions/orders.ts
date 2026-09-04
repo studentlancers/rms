@@ -24,37 +24,31 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 };
 
 import { calculateBillTotal } from "@/lib/bill-calculator";
+import { trimmedString, optionalTrimmedString, phoneSchema, moneySchema, positiveMoneySchema, positiveQuantitySchema } from "@/lib/validation";
 
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
 const orderItemSchema = z.object({
-  menuItemId: z.string(),
-  name: z.string(),
-  quantity: z.number().int().positive(),
-  unitPrice: z.number().positive(),
-  variant: z.string().optional(),
-  notes: z.string().optional(),
+  menuItemId: trimmedString(1, 100, "Menu item ID"),
+  name: trimmedString(1, 120, "Item name"),
+  quantity: positiveQuantitySchema("Quantity", 1000).int(),
+  unitPrice: positiveMoneySchema("Unit price", 100_000),
+  variant: optionalTrimmedString(80, "Variant"),
+  notes: optionalTrimmedString(300, "Notes"),
 });
 
 const createOrderSchema = z.object({
   orderType: z.enum(["DINE_IN", "TAKEAWAY", "DELIVERY"]),
-  tableId: z.string().optional(),
-  customerName: z.string().transform((val) => val?.trim() || undefined).optional(),
-  customerPhone: z
-    .string()
-    .transform((val) => val?.trim() || undefined)
-    .refine(
-      (val) => !val || /^[+0-9\s-]{7,15}$/.test(val),
-      "Invalid phone number format"
-    )
-    .optional(),
-  packagingCharge: z.number().min(0, "Packaging charge must be non-negative").default(0),
-  serviceCharge: z.number().min(0, "Service charge must be non-negative").default(0),
-  splittingCharge: z.number().min(0, "Splitting charge must be non-negative").default(0),
+  tableId: optionalTrimmedString(100, "Table ID"),
+  customerName: optionalTrimmedString(100, "Customer name"),
+  customerPhone: phoneSchema,
+  packagingCharge: moneySchema("Packaging charge", 5000).default(0),
+  serviceCharge: moneySchema("Service charge", 10000).default(0),
+  splittingCharge: moneySchema("Splitting charge", 5000).default(0),
   items: z.array(orderItemSchema).min(1, "Order must have at least one item"),
-  taxRate: z.number().min(0).max(1).default(0.05), // 5% default
+  taxRate: z.coerce.number().min(0).max(1).default(0.05), // 5% default
 });
 
 // ---------------------------------------------------------------------------
